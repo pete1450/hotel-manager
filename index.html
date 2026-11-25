@@ -418,9 +418,20 @@ function freshState(){
   Object.keys(STAFF_ROLES).forEach(function(k){G.staff[k]=0;});
   syncGridSize();
   /* The whole ground is one grid (see GRID_W x GRID_H below). The single
-     starting room stands at gx 6, gy 1 with its door facing SOUTH (rot 2),
-     toward the open lawn where a lobby and hallways can be laid. */
-  G.rooms.push(newRoom("standard",1,0,6,1,2));
+     starting room stands 5 tiles offset from the STREET marker: the
+     marker sits on the south edge at (GRID_W/2, GRID_H) — see the
+     STREET plaque in drawGroundGrid and streetPt() — and the room is
+     centred on that same column with its door facing SOUTH (rot 2)
+     toward the street, set back so its south edge / doorstep
+     (gy + h) is exactly 5 tiles short of the marker
+     (GRID_H - 5). Guests step off the street, cross those 5 tiles
+     of lawn, and are at the door. Derived from GRID_W / GRID_H and
+     the room's own size, so it stays 5 tiles off the marker if the
+     plot or the starting tier ever changes. */
+  var startW=typeW("standard"), startH=typeH("standard");
+  var startGx=Math.round(GRID_W/2)-Math.floor(startW/2);
+  var startGy=GRID_H-5-startH;
+  G.rooms.push(newRoom("standard",1,0,startGx,startGy,2));
   G.today=newDayRec();
   return G;
 }
@@ -738,6 +749,7 @@ function resolveGuest(g){
     else G.today.turnPrice++;
     feed(who+" turned away — <span class='why'>“"+d.text+"”</span>");
     sfx("pop");
+    refreshOpenMenus();
     return d;
   }
   var r=d.room;
@@ -745,6 +757,7 @@ function resolveGuest(g){
   G.today.checkedIn++;
   feed(who+" checked into <b>"+ROOM_TYPES[r.type].name+"</b> (Floor "+r.floor+") for "+g.stay+" night"+(g.stay>1?"s":"")+" at $"+priceFor(r)+"/night."+(d.desireHas?" Their want — "+(DESIRE_LABEL[g.desire])+" — is here, so they stretched their budget.":""));
   sfx("coin");
+  refreshOpenMenus(); /* a ready room just became occupied — refresh any open menu showing it */
   return d;
 }
 /* Morning checkout for one room */
@@ -766,14 +779,15 @@ function checkoutRoom(r){
   var roll=Math.random();
   var breakMult=r.condition<60?2:1;
   if(roll<0.03*breakMult){r.state="broken";r.repairKind="major";feed("Room on Floor "+r.floor+" ("+ROOM_TYPES[r.type].name+") suffered a <b>major fault</b> — plumbing/AC. Out of service until repaired.");}
-  else if(roll<0.11*breakMult){r.state="broken";r.repairKind="minor";feed("Room on Floor "+r.floor+" ("+ROOM_TYPES[r.type].name+") needs a <b>minor repair</b> (tap, bulb or remote).");}
+  else if(roll<0.09*breakMult){r.state="broken";r.repairKind="minor";feed("Room on Floor "+r.floor+" ("+ROOM_TYPES[r.type].name+") needs a <b>minor repair</b> (tap, bulb or remote).");}
   else{r.state="dirty";}
   if(r.stays%10===0){r.deepDue=true;}
   feed(g.arch.name+" checked out of Floor "+r.floor+" — "+s+"★ stay. Room needs "+(r.state==="broken"?"repair":"cleaning")+".");
+  refreshOpenMenus(); /* the room's state just flipped occupied → dirty/broken: if its menu (or the Rooms list) is open, the Clean / Repair option must appear NOW, not on close-and-reopen */
 }
 
 /* ---------- Day cycle ---------- */
-var DAY_SECONDS=30; /* base pace: a full day in 30s — 3x faster than the original 90s day */
+var DAY_SECONDS=20; /* base pace: a full day in 20s — clock runs 50% faster than the previous 30s day (days felt too slow). Arrivals per day are unchanged: spawnT is derived from DAY_SECONDS, so guests simply arrive closer together in real time. */
 function endOfDay(){
   /* nightly income from occupied rooms */
   var occ=0, supplyCost=0;
@@ -905,7 +919,7 @@ function staffWork(){
    Agent positions live in tile space, independent of the DOM, so
    cleaning keeps working on floors you aren't looking at; the
    staff figure on screen is bound to its agent in buildStaff. */
-var CLEAN_SECONDS=2, CLEANER_SPEED=3.6; /* tiles per second */
+var CLEAN_SECONDS=2, CLEANER_SPEED=1.8; /* tiles per second — halved (was 3.6): characters move at half speed while the clock runs faster. CLEAN_SECONDS stays 2 real seconds of cleaning, as before. */
 var cleaners=[];
 function cleanerCount(){return G.staff.housekeeper+(G.staff.manager>0?1:0);}
 function cleanerWalkable(f,x,y){
@@ -1079,7 +1093,7 @@ function tickCleaners(dt){
   if(!G||!G.started||dt<=0)return;
   syncCleaners();
   cleaners.forEach(function(c){
-    c.ph+=dt*9;
+    c.ph+=dt*4.5; /* walk-cycle cadence halved with travel speed, so the bob/frames stay in step with the feet */
     if(c.state==="clean"){
       var r=byId(c.targetId);
       if(!r||r.state==="occupied"||(r.state!=="dirty"&&!r.deepDue)){c.state="idle";c.targetId=null;}
@@ -1294,6 +1308,7 @@ function updateHUD(){
   renderFloorList();
   syncHudOffset();
   scheduleSave(); /* autosave: nearly every game action ends in updateHUD */
+  refreshOpenMenus(); /* an open menu must never go stale — updateHUD fires after nearly every action and twice a second while playing, so it doubles as the live-refresh poll */
 }
 function renderFloorList(){
   var el=document.getElementById("floorList"); if(!el)return;
@@ -1371,6 +1386,7 @@ function closeDrawer(){
 /* ---------- Panels ---------- */
 function el(html){var d=document.createElement("div");d.innerHTML=html;return d;}
 function renderPanel(){
+  lastPanelSig=panelSignature(); /* rendering brings the drawer up to date — see the live menu refresh below */
   var b=document.getElementById("panelBody");
   Array.prototype.forEach.call(document.querySelectorAll("#tabs button"),function(x){x.classList.toggle("on",x.getAttribute("data-tab")===G.tab);});
   if(G.tab==="build")renderBuild(b); else if(G.tab==="rooms")renderRooms(b);
@@ -4308,7 +4324,7 @@ function buildStaff(){
     var ckStaff=CHAR_STAFF[d.role]||null;
     el.innerHTML=charFigHTML(ckStaff,DIR_SE,0,false)||personSVG(d.color,o2);
     peopleLayer.appendChild(el);
-    var st={el:el,gx:d.gx,gy:d.gy,mode:d.mode,a:d.a,b:d.b,dir:1,sp:d.mode==="patrol"?1.5:0,ph:Math.random()*6,charKey:ckStaff};
+    var st={el:el,gx:d.gx,gy:d.gy,mode:d.mode,a:d.a,b:d.b,dir:1,sp:d.mode==="patrol"?0.75:0,ph:Math.random()*6,charKey:ckStaff}; /* patrol speed halved (was 1.5) with the other character speeds */
     var pp=projPct(st.gx,st.gy);
     el.style.left=pp[0]+"%";el.style.top=pp[1]+"%";
     el.style.zIndex=personZ(pp[1]);
@@ -4439,7 +4455,7 @@ function finishWalker(idx,w){
 function tickPeople(dt){
   for(var i=walkers.length-1;i>=0;i--){
     var w=walkers[i];
-    w.ph+=dt*9;
+    w.ph+=dt*4.5; /* walk-cycle cadence halved with travel speed, so the bob/frames stay in step with the feet */
     w.el.style.marginTop=(-PW*1.34+Math.abs(Math.sin(w.ph))*-PW*0.05)+"px";
     if(w.state==="wait"){
       if(w.charKey)setCharFig(w.el,w.charKey,w.dir,0,false); /* standing panel while deciding */
@@ -4500,13 +4516,13 @@ function tickPeople(dt){
       else if(w.wi>=w.wp.length)finishWalker(i,w);
       continue;
     }
-    var step=Math.min(dist,20*dt); /* a touch quicker: the pathed routes are longer than the old straight lines */
+    var step=Math.min(dist,10*dt); /* guest walk speed, % of scene per second — halved (was 20) so people amble while the faster clock turns */
     w.x+=dx/dist*step;w.y+=dy/dist*step;
     placeWalker(w);
   }
   staffFigs.forEach(function(st){
     if(st.mode!=="patrol")return;
-    st.ph+=dt*7;
+    st.ph+=dt*3.5; /* walk-cycle cadence halved with patrol speed */
     st.gx+=st.dir*st.sp*dt;
     if(st.gx>st.b)st.dir=-1; if(st.gx<st.a)st.dir=1;
     var pp=projPct(st.gx,st.gy);
@@ -4648,7 +4664,114 @@ function startMoveSelected(){
     startMove({moveKind:"amenity",amenKey:sel.key,label:AMENITIES[sel.key].name,w:spot.w,h:spot.h,rot:0,floor:spot.floor,fromGx:spot.gx,fromGy:spot.gy});
   }else{toast("Hallway tiles can't be moved — remove this tile and lay a new one from Build.");}
 }
+/* ---------- Live menu refresh ----------
+   Menus used to be rendered ONCE, when opened, and never again —
+   so a room menu opened on an occupied room still showed no Clean
+   button after the guest checked out, until you closed and
+   reopened it. Now every open menu carries a SIGNATURE: a short
+   string summarising exactly the state its contents are drawn
+   from. refreshOpenMenus() recomputes the signatures and re-renders
+   a menu ONLY when its signature has changed — a real state change
+   (checkout, check-in, a cleaner finishing, a repair, a day
+   rolling over, cash moving an affordability disable, a two-tap
+   confirm expiring) updates the open menu in place, while an
+   unchanged menu is never touched, so nothing flickers, scroll
+   positions survive, and a tap in flight is never disturbed.
+   The poll is updateHUD (after nearly every action, and twice a
+   second while playing); checkout and check-in also call it
+   directly so their change lands the same moment it happens. */
+var lastSelSig="__none__",lastPanelSig="__none__";
+function selSignature(){
+  var sel=G.selected;
+  if(!sel)return "none";
+  if(sel.kind==="room"){
+    var r=byId(sel.id);
+    if(!r)return "room:gone:"+sel.id;
+    return ["room",r.id,r.state,r.deepDue?1:0,r.repairKind||"",Math.round(r.condition),r.nightsLeft||0,
+      r.guest?(r.guest.arch.key+"|"+(r.guest.desire||"")):"",r.bed,r.bath,r.tv,r.furn,r.finish,
+      r.rot||0,r.gx,r.gy,r.floor,priceFor(r),roomAppeal(r),
+      (demolishArmId===r.id&&Date.now()-demolishArmAt<=8000)?1:0].join("|");
+  }
+  if(sel.kind==="lobby")return ["lobby",G.lobby,lobbyW(),lobbyH(),G.lobbyRot||2].join("|");
+  if(sel.kind==="dining")return ["dining",G.breakfast,diningW(),diningH(),G.diningRot||2,G.diningGx==null?0:1,
+    (modifyArm.key==="dining"&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
+  if(sel.kind==="vertical"){
+    var v=verticalAt(sel.gx,sel.gy);
+    return ["vertical",sel.gx,sel.gy,v?v.kind:"gone",G.floors,
+      (modifyArm.key==="vertical:"+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
+  }
+  if(sel.kind==="amenity"){
+    var spot=(G.amenitySpots||{})[sel.key];
+    return ["amenity",sel.key,G.amenities[sel.key]||0,spot?(spot.floor+","+spot.gx+","+spot.gy+","+spot.w+"x"+spot.h):"gone",
+      (modifyArm.key==="amenity:"+sel.key&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
+  }
+  if(sel.kind==="hall")return ["hall",sel.floor,sel.gx,sel.gy,hasHall(sel.floor,sel.gx,sel.gy)?1:0,
+    (modifyArm.key==="hall:"+sel.floor+","+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
+  return sel.kind;
+}
+function panelSignature(){
+  var tab=G.tab;
+  if(tab==="rooms"){
+    return "rooms|"+Math.floor(G.cash)+"|"+(unlimitedCash()?1:0)+"|"+
+      (demolishArmId!=null&&Date.now()-demolishArmAt<=8000?demolishArmId:0)+"|"+
+      G.rooms.map(function(r){return [r.id,r.type,r.floor,r.slot,r.gx,r.gy,r.state,r.deepDue?1:0,r.repairKind||"",
+        Math.round(r.condition),r.stays,r.nightsLeft||0,r.bed,r.bath,r.tv,r.furn,r.finish,priceFor(r),roomAppeal(r)].join(",");}).join(";");
+  }
+  if(tab==="build"){
+    var counts={}; G.rooms.forEach(function(r){counts[r.type]=(counts[r.type]||0)+1;});
+    return ["build",Object.keys(G.hallTiles||{}).length,connectedCount(),G.lobby,lobbyW(),lobbyH(),
+      G.diningGx==null?0:1,G.breakfast,G.floors,(G.verticals||[]).map(function(v){return v.kind;}).join("+"),
+      Object.keys(AMENITIES).map(function(k){var sp=(G.amenitySpots||{})[k];return G.amenities[k]+(sp?"@"+sp.floor:"");}).join(","),
+      Object.keys(ROOM_TYPES).map(function(k){return counts[k]||0;}).join(",")].join("|");
+  }
+  if(tab==="staff"){
+    return ["staff",Object.keys(STAFF_ROLES).map(function(k){return G.staff[k];}).join(","),
+      G.rooms.filter(function(r){return r.state==="dirty";}).length,
+      G.rooms.filter(function(r){return r.state==="broken";}).length,monthlyCosts().wages].join("|");
+  }
+  if(tab==="ledger"){
+    var t=trailing30();
+    return ["ledger",G.day,t.roomInc,t.feeInc,t.eventInc,t.costs,t.nights,t.checkedIn,t.turnNoRoom,t.turnNoPath,
+      t.turnStandard,t.turnPrice,t.turnParty,monthlyCosts().total,hotelAppeal(),G.rooms.length,G.floors].join("|");
+  }
+  if(tab==="feed"){
+    return "feed|"+G.feed.length+"|"+(G.feed.length?(G.feed[0].day+"~"+G.feed[0].html):"");
+  }
+  if(tab==="prices"){
+    var t30=trailing30();
+    return ["prices",JSON.stringify(G.priceByType),JSON.stringify(G.fees),G.breakfastMode,G.breakfast,
+      G.staff.manager,t30.turnPrice,t30.checkedIn,Math.round(t30.occupancy*100)].join("|");
+  }
+  return tab;
+}
+function refreshOpenMenus(){
+  if(!G)return;
+  /* The tap-a-thing MODIFY menu (#selInfo) */
+  if(selSignature()!==lastSelSig){
+    var boxEl=document.getElementById("selInfo");
+    var st=boxEl?boxEl.scrollTop:0;
+    refreshSelInfo();
+    if(boxEl&&boxEl.style.display!=="none")boxEl.scrollTop=st; /* keep the reader's place in a scrolled menu */
+  }
+  /* The management drawer — only while it is actually open, and
+     never over the top of a field the player is editing (a price
+     slider being dragged, a fee box being typed in): a skipped
+     refresh simply lands on the next poll after the edit ends,
+     because the stored signature stays stale until then. */
+  var side=document.getElementById("side");
+  if(side&&side.classList.contains("open")&&panelSignature()!==lastPanelSig){
+    var pb=document.getElementById("panelBody");
+    var act=document.activeElement;
+    var editing=!!(act&&pb&&pb.contains(act)&&(act.tagName==="INPUT"||act.tagName==="SELECT"||act.tagName==="TEXTAREA"));
+    if(!editing){
+      var pst=pb?pb.scrollTop:0;
+      renderPanel();
+      if(pb)pb.scrollTop=pst;
+    }
+  }
+}
 function refreshSelInfo(){
+  lastSelSig=selSignature(); /* this render brings the menu up to date — see the live menu refresh above */
   var sel=G.selected,boxEl=document.getElementById("selInfo");
   if(!sel){boxEl.style.display="none";return;}
   if(document.getElementById("side").classList.contains("open")){boxEl.style.display="none";return;}
