@@ -405,77 +405,136 @@ var AREA_FUNCS={
 };
 /* Interior pieces per function: cost is one-off, upkeep is monthly,
    appeal counts toward the hotel once installed. req = the piece
-   without which the area is not yet its function. */
+   without which the area is not yet its function.
+   PIECES ARE PHYSICAL: every piece has a footprint (size, in tiles)
+   and a position INSIDE its area — a.items[key] = {dx,dy,w,h,lv},
+   where dx/dy are offsets from the area's own corner, so a piece
+   rides along when the whole area moves and can never be dragged
+   outside the area's walls. Buying a piece starts the tap-and-hold
+   placement flow, confined to the inside of its area. A piece with
+   `levels` (the Pool) is placed at its smallest size and upgraded
+   in place to bigger sizes — each level is a bigger footprint that
+   must still fit inside the area, around the other pieces. */
 var AREA_ITEMS={
   lobby:[
-    {key:"desk",name:"Lobby Desk",cost:500,upkeep:0,appeal:8,req:true,desc:"The bare minimum — without a desk this is not a functional lobby"},
-    {key:"fountain",name:"Fountain",cost:1500,upkeep:30,appeal:8,desc:"A fountain in the lobby — also counts toward the fountain some guests ask for"},
-    {key:"couches",name:"Couches",cost:400,upkeep:0,appeal:4,desc:"Seating for waiting guests"},
-    {key:"tables",name:"Tables",cost:300,upkeep:0,appeal:3,desc:"Coffee tables beside the couches"},
-    {key:"wifi",name:"Wi-Fi",cost:250,upkeep:40,appeal:3,desc:"Switches on hotel Wi-Fi for the whole hotel — $40/mo"}
+    {key:"desk",name:"Lobby Desk",cost:500,upkeep:0,appeal:8,req:true,size:[2,1],desc:"The bare minimum — without a desk this is not a functional lobby"},
+    {key:"fountain",name:"Fountain",cost:1500,upkeep:30,appeal:8,size:[2,2],desc:"A fountain in the lobby — also counts toward the fountain some guests ask for"},
+    {key:"couches",name:"Couches",cost:400,upkeep:0,appeal:4,size:[2,1],desc:"Seating for waiting guests"},
+    {key:"tables",name:"Tables",cost:300,upkeep:0,appeal:3,size:[1,1],desc:"Coffee tables beside the couches"},
+    {key:"wifi",name:"Wi-Fi",cost:250,upkeep:40,appeal:3,size:[1,1],desc:"Switches on hotel Wi-Fi for the whole hotel — $40/mo"}
   ],
   pool:[
-    {key:"pool",name:"Pool",cost:3000,upkeep:60,appeal:14,req:true,desc:"The pool itself — without it this is not a pool room"},
-    {key:"slide",name:"Water Slide",cost:1800,upkeep:20,appeal:8,needs:"pool",desc:"Needs the Pool"},
-    {key:"ladder",name:"Pool Ladder",cost:250,upkeep:0,appeal:2,needs:"pool",desc:"Needs the Pool"},
-    {key:"shower",name:"Pool Shower",cost:600,upkeep:10,appeal:3,desc:"Rinse-off shower by the pool"},
-    {key:"bathroom",name:"Pool Bathroom",cost:900,upkeep:15,appeal:4,desc:"Changing / WC stall for swimmers"}
+    {key:"pool",name:"Pool",req:true,levels:[
+      {name:"Small Pool",cost:3000,upkeep:60,appeal:14,w:3,h:2},
+      {name:"Medium Pool",cost:6000,upkeep:110,appeal:22,w:4,h:3},
+      {name:"Large Pool",cost:14000,upkeep:200,appeal:32,w:5,h:3},
+      {name:"Resort Pool",cost:30000,upkeep:340,appeal:44,w:6,h:4}
+    ],desc:"The pool itself — placed small, then upgraded to larger sizes inside the area. Without it this is not a pool room"},
+    {key:"slide",name:"Water Slide",cost:1800,upkeep:20,appeal:8,needs:"pool",size:[2,1],desc:"Needs the Pool"},
+    {key:"ladder",name:"Pool Ladder",cost:250,upkeep:0,appeal:2,needs:"pool",size:[1,1],desc:"Needs the Pool"},
+    {key:"shower",name:"Pool Shower",cost:600,upkeep:10,appeal:3,size:[1,1],desc:"Rinse-off shower by the pool"},
+    {key:"bathroom",name:"Pool Bathroom",cost:900,upkeep:15,appeal:4,size:[1,1],desc:"Changing / WC stall for swimmers"}
   ],
   gym:[
-    {key:"treadmills",name:"Treadmills & Bikes",cost:1200,upkeep:30,appeal:8,req:true,desc:"The exercise kit itself — without it this is not a gym"},
-    {key:"weights",name:"Weight Rack",cost:800,upkeep:10,appeal:5},
-    {key:"mats",name:"Class Mats & Mirrors",cost:900,upkeep:10,appeal:5,desc:"Group classes space"}
+    {key:"treadmills",name:"Treadmills & Bikes",cost:1200,upkeep:30,appeal:8,req:true,size:[3,1],desc:"The exercise kit itself — without it this is not a gym"},
+    {key:"weights",name:"Weight Rack",cost:800,upkeep:10,appeal:5,size:[2,1]},
+    {key:"mats",name:"Class Mats & Mirrors",cost:900,upkeep:10,appeal:5,size:[2,1],desc:"Group classes space"}
   ],
   bar:[
-    {key:"counter",name:"Bar Counter",cost:2000,upkeep:50,appeal:10,req:true,desc:"The bar itself — without it this is not a bar"},
-    {key:"stools",name:"Bar Stools",cost:350,upkeep:0,appeal:3},
-    {key:"tables",name:"Restaurant Tables",cost:600,upkeep:10,appeal:5},
-    {key:"kitchen",name:"Kitchen Pass",cost:2500,upkeep:60,appeal:8,desc:"Hot food from the bar kitchen"}
+    {key:"counter",name:"Bar Counter",cost:2000,upkeep:50,appeal:10,req:true,size:[3,1],desc:"The bar itself — without it this is not a bar"},
+    {key:"stools",name:"Bar Stools",cost:350,upkeep:0,appeal:3,size:[2,1]},
+    {key:"tables",name:"Restaurant Tables",cost:600,upkeep:10,appeal:5,size:[2,2]},
+    {key:"kitchen",name:"Kitchen Pass",cost:2500,upkeep:60,appeal:8,size:[1,2],desc:"Hot food from the bar kitchen"}
   ],
   spa:[
-    {key:"sauna",name:"Sauna",cost:6000,upkeep:120,appeal:20,req:true,desc:"The sauna itself — without it this is not a spa"},
-    {key:"tub",name:"Soaking Tub",cost:2500,upkeep:60,appeal:10},
-    {key:"massage",name:"Treatment Room",cost:4000,upkeep:80,appeal:12}
+    {key:"sauna",name:"Sauna",cost:6000,upkeep:120,appeal:20,req:true,size:[2,2],desc:"The sauna itself — without it this is not a spa"},
+    {key:"tub",name:"Soaking Tub",cost:2500,upkeep:60,appeal:10,size:[1,1]},
+    {key:"massage",name:"Treatment Room",cost:4000,upkeep:80,appeal:12,size:[2,1]}
   ],
   dining:[
-    {key:"buffet",name:"Buffet Counter",cost:900,upkeep:25,appeal:8,req:true,desc:"Where breakfast is served from"},
-    {key:"tables",name:"Dining Tables",cost:500,upkeep:10,appeal:5},
-    {key:"kitchen",name:"Kitchen",cost:2800,upkeep:60,appeal:10,desc:"Cooked dishes, not just cold trays"}
+    {key:"buffet",name:"Buffet Counter",cost:900,upkeep:25,appeal:8,req:true,size:[3,1],desc:"Where breakfast is served from"},
+    {key:"tables",name:"Dining Tables",cost:500,upkeep:10,appeal:5,size:[2,2]},
+    {key:"kitchen",name:"Kitchen",cost:2800,upkeep:60,appeal:10,size:[1,2],desc:"Cooked dishes, not just cold trays"}
   ],
   meeting:[
-    {key:"table",name:"Board Table & Chairs",cost:2000,upkeep:40,appeal:6,req:true,desc:"The meeting setup itself"},
-    {key:"screen",name:"Projector & Screen",cost:1500,upkeep:20,appeal:5},
-    {key:"coffee",name:"Coffee Station",cost:600,upkeep:15,appeal:3}
+    {key:"table",name:"Board Table & Chairs",cost:2000,upkeep:40,appeal:6,req:true,size:[3,2],desc:"The meeting setup itself"},
+    {key:"screen",name:"Projector & Screen",cost:1500,upkeep:20,appeal:5,size:[2,1]},
+    {key:"coffee",name:"Coffee Station",cost:600,upkeep:15,appeal:3,size:[1,1]}
   ],
   expo:[
-    {key:"booths",name:"Expo Booths",cost:6000,upkeep:300,appeal:18,req:true,desc:"The booth grid itself — without it this is not an expo hall"},
-    {key:"stage",name:"Stage & Lighting",cost:5000,upkeep:200,appeal:12},
-    {key:"banner",name:"Entrance Banner",cost:1200,upkeep:50,appeal:5}
+    {key:"booths",name:"Expo Booths",cost:6000,upkeep:300,appeal:18,req:true,size:[4,2],desc:"The booth grid itself — without it this is not an expo hall"},
+    {key:"stage",name:"Stage & Lighting",cost:5000,upkeep:200,appeal:12,size:[3,1]},
+    {key:"banner",name:"Entrance Banner",cost:1200,upkeep:50,appeal:5,size:[2,1]}
   ],
   garden:[
-    {key:"plants",name:"Planters & Plants",cost:600,upkeep:20,appeal:4,req:true,desc:"The planting itself"},
-    {key:"paths",name:"Garden Paths",cost:900,upkeep:10,appeal:5},
-    {key:"gazebo",name:"Gazebo",cost:3500,upkeep:80,appeal:12}
+    {key:"plants",name:"Planters & Plants",cost:600,upkeep:20,appeal:4,req:true,size:[2,2],desc:"The planting itself"},
+    {key:"paths",name:"Garden Paths",cost:900,upkeep:10,appeal:5,size:[2,2]},
+    {key:"gazebo",name:"Gazebo",cost:3500,upkeep:80,appeal:12,size:[2,2]}
   ],
   parking:[
-    {key:"bays",name:"Marked Bays",cost:2500,upkeep:40,appeal:6,req:true,desc:"The parking bays themselves"},
-    {key:"canopy",name:"Covered Canopy",cost:4000,upkeep:70,appeal:6},
-    {key:"valet",name:"Valet Booth",cost:3000,upkeep:100,appeal:6}
+    {key:"bays",name:"Marked Bays",cost:2500,upkeep:40,appeal:6,req:true,size:[4,2],desc:"The parking bays themselves"},
+    {key:"canopy",name:"Covered Canopy",cost:4000,upkeep:70,appeal:6,size:[3,2]},
+    {key:"valet",name:"Valet Booth",cost:3000,upkeep:100,appeal:6,size:[1,1]}
   ],
   extras:[
-    {key:"games",name:"Games Shelves",cost:2200,upkeep:50,appeal:6,req:true,desc:"The games / library itself"},
-    {key:"cinema",name:"Cinema Screen",cost:4000,upkeep:90,appeal:10},
-    {key:"kids",name:"Kids Play Corner",cost:2500,upkeep:60,appeal:8}
+    {key:"games",name:"Games Shelves",cost:2200,upkeep:50,appeal:6,req:true,size:[3,1],desc:"The games / library itself"},
+    {key:"cinema",name:"Cinema Screen",cost:4000,upkeep:90,appeal:10,size:[2,1]},
+    {key:"kids",name:"Kids Play Corner",cost:2500,upkeep:60,appeal:8,size:[2,1]}
   ]
 };
 function areasList(){return (G&&G.areas)||[];}
 function areaById(id){var l=areasList();for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null;}
-function areaAtCellF(floor,gx,gy){var l=areasList();for(var i=0;i<l.length;i++){var a=l[i];if(a.floor!==floor)continue;if(gx>=a.gx&&gx<a.gx+a.w&&gy>=a.gy&&gy<a.gy+a.h)return a;}return null;}
+function areaAtCellF(floor,gx,gy){
+  if(G&&typeof _perfCache!=="undefined"){var m=cellMaps();return m.area[floor*100000+gx*100+gy]||null;}
+  var l=areasList();for(var i=0;i<l.length;i++){var a=l[i];if(a.floor!==floor)continue;if(gx>=a.gx&&gx<a.gx+a.w&&gy>=a.gy&&gy<a.gy+a.h)return a;}return null;
+}
 function areaItemDef(func,key){var l=AREA_ITEMS[func]||[];for(var i=0;i<l.length;i++)if(l[i].key===key)return l[i];return null;}
 function areaReqKey(func){var l=AREA_ITEMS[func]||[];for(var i=0;i<l.length;i++)if(l[i].req)return l[i].key;return null;}
 function areaFunctional(a){if(!a||!a.func)return false;var rk=areaReqKey(a.func);return !rk||!!(a.items&&a.items[rk]);}
-function areaAppeal(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=l[i].appeal;return s;}
-function areaUpkeep(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=l[i].upkeep;return s;}
+/* A piece's effective stats: for a levelled piece (the Pool) they
+   come from its current level; for a plain piece from its def. */
+function areaItemLvDef(def,lv){
+  if(!def)return null;
+  if(def.levels&&def.levels.length){var l=def.levels[Math.max(0,Math.min(lv||0,def.levels.length-1))];return {name:l.name,cost:l.cost,upkeep:l.upkeep,appeal:l.appeal,w:l.w,h:l.h};}
+  return def;
+}
+function areaItemDefSize(def,lv){
+  if(!def)return [1,1];
+  if(def.levels&&def.levels.length){var l=def.levels[Math.max(0,Math.min(lv||0,def.levels.length-1))];return [l.w||1,l.h||1];}
+  return def.size||[1,1];
+}
+function areaItemStat(a,key,field){
+  if(!a||!a.func)return 0;
+  var def=areaItemDef(a.func,key),it=a.items&&a.items[key]; if(!def||!it)return 0;
+  var ld=areaItemLvDef(def,(typeof it==="object"&&it)?(it.lv||0):0);
+  return (ld&&ld[field])||0;
+}
+function areaAppeal(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=areaItemStat(a,l[i].key,"appeal");return s;}
+function areaUpkeep(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=areaItemStat(a,l[i].key,"upkeep");return s;}
+/* Pieces live INSIDE their area: a piece rect (dx,dy,w,h — offsets
+   from the area's corner) is legal only fully within the area's
+   walls and clear of every other piece. That one rule is what
+   placement, moving and pool upgrades all enforce. */
+function areaItemFits(a,key,dx,dy,w,h){
+  if(!a||dx<0||dy<0||dx+w>a.w||dy+h>a.h)return false;
+  var items=a.items||{};
+  for(var k in items){
+    if(k===key)continue;
+    var o=items[k]; if(!o||typeof o!=="object")continue;
+    var ow=o.w||1,oh=o.h||1,ox=o.dx||0,oy=o.dy||0;
+    if(dx<ox+ow&&dx+w>ox&&dy<oy+oh&&dy+h>oy)return false;
+  }
+  return true;
+}
+function areaItemFindSpot(a,key,w,h){
+  if(!a)return null;
+  for(var dy=0;dy+h<=a.h;dy++)for(var dx=0;dx+w<=a.w;dx++)if(areaItemFits(a,key,dx,dy,w,h))return {dx:dx,dy:dy};
+  return null;
+}
+function areaItemRect(a,key){
+  var it=a&&a.items&&a.items[key]; if(!it||typeof it!=="object")return null;
+  return {gx:a.gx+(it.dx||0),gy:a.gy+(it.dy||0),w:it.w||1,h:it.h||1};
+}
 function areaTitle(a){return a&&a.func?AREA_FUNCS[a.func].name+" area":"Undesignated area";}
 /* An area only COUNTS when it is functional AND reachable from the
    lobby (see areaReachable): an unconnected pool / gym / spa gives
@@ -609,6 +668,26 @@ freshState();
    and says so in the menu, it never breaks. */
 var SAVE_KEY="hotel-master-save-v1";
 var saveTimer=null, saveAvailable=true, resumedGame=false, bootSaveFound=false;
+/* Autosave throttling: saveGame used to deep-copy and serialise the
+   ENTIRE state on every call — and it was called on a fixed 2.5s
+   interval plus a 450ms debounce from updateHUD, which fires after
+   nearly every action and twice a second while playing — so a tap
+   on an area (which rebuilds the scene and the HUD) paid for a full
+   state serialisation every time, and the interval kept paying it
+   even when nothing had changed. Now a save only happens when the
+   state is actually dirty: scheduleSave marks it dirty and coalesces
+   a burst of actions into ONE write after 1s of quiet, the interval
+   below re-checks a cheap fingerprint (so a change that somehow
+   bypassed updateHUD still gets saved), and page-hide / unload
+   force a write. */
+var saveDirty=true, lastSaveAt=0, lastSaveFp="";
+function stateFingerprint(){
+  if(!G)return "";
+  var fp=G.day+"|"+G.cash+"|"+G.floors+"|"+(G.rooms?G.rooms.length:0);
+  if(G.rooms)for(var i=0;i<G.rooms.length;i++){var r=G.rooms[i];fp+="|"+r.id+":"+r.state+":"+Math.round(r.condition)+":"+(r.nightsLeft||0);}
+  fp+="|"+Object.keys(G.hallTiles||{}).length+"|"+areasList().length;
+  return fp;
+}
 function storeGet(){try{return window.localStorage.getItem(SAVE_KEY);}catch(e){saveAvailable=false;return null;}}
 function storeSet(v){try{window.localStorage.setItem(SAVE_KEY,v);return true;}catch(e){saveAvailable=false;return false;}}
 function storeRemove(){try{window.localStorage.removeItem(SAVE_KEY);}catch(e){saveAvailable=false;}}
@@ -620,15 +699,17 @@ function snapshotState(){
   copy.started=true; /* a save only exists once a game has started */
   return {v:1,savedAt:Date.now(),state:copy};
 }
-function saveGame(){
+function saveGame(force){
   if(!G||!G.started)return;
+  if(!force&&!saveDirty&&lastSaveAt>0)return; /* nothing changed since the last write */
   var snap=snapshotState(); if(!snap)return;
-  if(storeSet(JSON.stringify(snap)))updateSaveStatus(snap.savedAt);
+  if(storeSet(JSON.stringify(snap))){saveDirty=false;lastSaveAt=Date.now();lastSaveFp=stateFingerprint();updateSaveStatus(snap.savedAt);}
 }
 function scheduleSave(){
   if(!G||!G.started)return;
+  saveDirty=true;
   if(saveTimer)clearTimeout(saveTimer);
-  saveTimer=setTimeout(function(){saveTimer=null;saveGame();},450);
+  saveTimer=setTimeout(function(){saveTimer=null;saveGame();},1000);
 }
 function readSave(){
   var raw=storeGet(); if(!raw)return null;
@@ -674,6 +755,25 @@ function applySave(data){
      tier rooms now, not areas) comes back undesignated, ready to
      be given one of the sizeable functions or removed. */
   G.areas.forEach(function(a){if(a&&a.func&&!AREA_FUNCS[a.func]){a.func=null;a.items={};}});
+  /* Area interiors used to be simple on/off flags; they are now
+     PIECES with a position and a size inside their area (so they
+     can be placed, moved and — for the pool — upgraded, but never
+     taken out of the area). Convert any flag-style item in an old
+     save into a placed piece at the first free spot inside its
+     area; a piece that somehow fits nowhere keeps its corner spot
+     rather than being lost. */
+  G.areas.forEach(function(a){
+    if(!a||!a.func||!a.items||typeof a.items!=="object")return;
+    Object.keys(a.items).forEach(function(k){
+      var def=areaItemDef(a.func,k); if(!def)return;
+      var v=a.items[k];
+      if(v&&typeof v==="object"&&typeof v.dx==="number"&&typeof v.dy==="number")return;
+      if(!v){delete a.items[k];return;}
+      var sz=areaItemDefSize(def,0);
+      var sp=areaItemFindSpot(a,k,sz[0],sz[1]);
+      a.items[k]={dx:sp?sp.dx:0,dy:sp?sp.dy:0,w:Math.min(sz[0],a.w),h:Math.min(sz[1],a.h),lv:0};
+    });
+  });
   if(typeof G.nextAreaId!=="number")G.nextAreaId=G.areas.length+1;
   if(!G.priceByType||typeof G.priceByType!=="object")G.priceByType={standard:45};
   if(!G.fees||typeof G.fees!=="object")G.fees={pool:8,parking:10};
@@ -775,9 +875,13 @@ function doNewGame(){
 /* Save when the page goes away or into the background, and on a
    steady interval while playing (covers guest check-ins and other
    changes that don't pass through updateHUD). */
-document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")saveGame();});
-window.addEventListener("beforeunload",function(){saveGame();});
-setInterval(function(){if(G&&G.started)saveGame();},2500);
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")saveGame(true);});
+window.addEventListener("beforeunload",function(){saveGame(true);});
+setInterval(function(){
+  if(!G||!G.started)return;
+  if(stateFingerprint()!==lastSaveFp)saveDirty=true; /* a change that bypassed scheduleSave still gets saved */
+  saveGame();
+},5000);
 
 /* ---------- Derived values ---------- */
 function roomAppeal(r){
@@ -791,7 +895,21 @@ function roomAppeal(r){
   if(r.state==="broken")a-=12;
   return Math.max(0,a);
 }
+/* Appeal is recomputed from the whole hotel on every call, and
+   updateHUD alone calls it several times (directly and via era())
+   after every action and twice a second while playing — in a big
+   hotel that was a real slice of every area interaction. The total
+   only depends on the layout (cached above) plus the fields in
+   appealExtraSig, so it is cached against both. */
+function appealExtraSig(){
+  return [G.lobby,G.breakfast,G.gardenNeglect,G.staff.gardener||0,
+    Object.keys(AMENITIES).map(function(k){return G.amenities[k];}).join(","),
+    (G.rooms||[]).map(function(r){return r.bed+","+r.bath+","+r.tv+","+r.furn+","+r.finish+","+Math.round(r.condition)+","+r.state+","+(r.cappeal||"");}).join(";")
+  ].join("|");
+}
 function hotelAppeal(){
+  var pc=(typeof _perfCache!=="undefined")?_pc():null,sig=null;
+  if(pc){sig=layoutSignature()+"#"+appealExtraSig();if(pc.appealSig===sig)return pc.appeal;}
   var a=LOBBY_TIERS[G.lobby].appeal+BREAKFAST_TIERS[G.breakfast].appeal;
   /* Containers earn a little appeal for real floor area beyond their starting footprint — a bigger lobby / dining room seats and impresses more guests. */
   if(G.lobbyGx!=null&&typeof lobbyW==='function')a+=Math.max(0,Math.round((lobbyW()*lobbyH()-4)/4));
@@ -805,6 +923,7 @@ function hotelAppeal(){
   if(G.rooms.length){var s=0,rn=0;G.rooms.forEach(function(r){if(roomReachable(r)){s+=roomAppeal(r);rn++;}});if(rn)a+=Math.round(s/rn*0.5);}
   (G.verticals||[]).forEach(function(v){a+=(VERTICAL_TYPES[v.kind]?VERTICAL_TYPES[v.kind].appeal:0);});
   areasList().forEach(function(ar){if(areaReachable(ar))a+=areaAppeal(ar);}); /* designated areas earn appeal from what is built inside them — but only once a path from the lobby reaches them */
+  if(pc){pc.appealSig=sig;pc.appeal=a;}
   return a;
 }
 /* Internal only: what guests privately judge a room to be worth. Never
@@ -1112,9 +1231,9 @@ function bfsCleanerPath(f,sx,sy,isTarget){
   var prev={},queue=[[sx,sy]],found=null;
   prev[sx+","+sy]="start";
   if(isTarget(sx,sy))found=sx+","+sy;
-  var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(queue.length&&!found){
-    var cur=queue.shift();
+  var dirs=[[1,0],[-1,0],[0,1],[0,-1]],head=0;
+  while(head<queue.length&&!found){
+    var cur=queue[head++];
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(prev[k]||!cleanerWalkable(f,nx,ny))continue;
@@ -1432,16 +1551,93 @@ function designateArea(a,func){
   toast(AREA_FUNCS[func].name+" designated"+(rd?" — needs its "+rd.name:"")); sfx("pop");
   rebuildScene(); updateHUD(); refreshSelInfo();
 }
+/* Buying an interior piece no longer drops it in by magic: it
+   starts the placement flow CONFINED TO THE INSIDE OF ITS AREA —
+   tap a spot inside the area, hold 1s, and the piece is built
+   there at its real footprint. The pool is placed at its smallest
+   size and upgraded bigger later (upgradeAreaItem). */
 function buyAreaItem(a,key){
   if(!a||!a.func)return;
   var def=areaItemDef(a.func,key); if(!def||(a.items&&a.items[key]))return;
   if(def.needs&&!(a.items&&a.items[def.needs])){toast(def.name+" needs the "+areaItemDef(a.func,def.needs).name+" built first.");refreshSelInfo();return;}
-  if(!spend(def.cost))return;
+  var sz=areaItemDefSize(def,0), ld=areaItemLvDef(def,0);
+  if(sz[0]>a.w||sz[1]>a.h){toast("The "+def.name+" ("+sz[0]+"×"+sz[1]+") won't fit in this "+a.w+"×"+a.h+" area at all — expand the area first (the Expand buttons in its menu).");refreshSelInfo();return;}
+  if(!areaItemFindSpot(a,key,sz[0],sz[1])){toast("No room left inside this area for the "+def.name+" ("+sz[0]+"×"+sz[1]+") — expand the area, or move / remove a piece to make space.");refreshSelInfo();return;}
+  startAreaItemPlacement(a,key);
+}
+function startAreaItemPlacement(a,key){
+  var def=areaItemDef(a.func,key); if(!def)return;
+  var sz=areaItemDefSize(def,0), ld=areaItemLvDef(def,0);
+  var spot=areaItemFindSpot(a,key,sz[0],sz[1]);
+  PLACE={kind:"areaItem",key:null,areaId:a.id,itemKey:key,label:def.name+" — inside the "+areaTitle(a),cost:ld.cost,w:sz[0],h:sz[1],rot:0,floor:a.floor,ghost:null};
+  closeDrawer();
+  var si=document.getElementById("selInfo"); if(si)si.style.display="none";
+  if(G.curFloor!==a.floor)G.curFloor=a.floor;
+  if(G.view!=="floor"){G.view="floor";syncViewButtons();}
+  var bar=document.getElementById("placeBar"); if(bar)bar.style.display="block";
+  var lab=document.getElementById("placeLabel"); if(lab)lab.innerHTML="<b>Placing: "+def.name+"</b> — inside the "+areaTitle(a)+" · "+money(ld.cost)+(unlimitedCash()?" (unlimited cash)":"");
+  var rb=document.getElementById("btnRotate"); if(rb)rb.style.display="none";
+  var hint=document.getElementById("placeHint"); if(hint)hint.textContent="Tap a spot INSIDE the area to preview · hold 1s to build it there. It must fit inside the area and clear of the other pieces.";
+  PLACE.ghost=spot?{gx:a.gx+spot.dx,gy:a.gy+spot.dy,w:sz[0],h:sz[1],rot:0,valid:true}:{gx:a.gx,gy:a.gy,w:sz[0],h:sz[1],rot:0,valid:false};
+  rebuildScene(); updateHUD();
+  toast("Placing: "+def.name+" — inside the "+areaTitle(a));
+}
+function placeAreaItemAt(pl,gh){
+  var a=areaById(pl.areaId); if(!a||!a.func)return false;
+  var def=areaItemDef(a.func,pl.itemKey); if(!def)return false;
+  if(a.items&&a.items[pl.itemKey])return false;
+  if(!areaItemFits(a,pl.itemKey,gh.gx-a.gx,gh.gy-a.gy,pl.w,pl.h))return false;
+  var ld=areaItemLvDef(def,0);
+  if(!spend(ld.cost))return false;
   if(!a.items)a.items={};
-  a.items[key]=true;
-  feed("Built the <b>"+def.name+"</b> inside the "+areaTitle(a)+" on Floor "+a.floor+" ("+money(def.cost)+(def.upkeep?", "+money(def.upkeep)+"/mo":"")+", +"+def.appeal+" Appeal)."+(key==="wifi"?" <b>The hotel now has Wi-Fi.</b>":"")+(def.req?" The "+AREA_FUNCS[a.func].name+" is now <b>functional</b>.":"")+(hasAnyLobby()&&!areaReachable(a)?" <b>Warning:</b> no path from the lobby reaches this area — it earns <b>no benefit</b> until a hallway path touches it.":""));
+  a.items[pl.itemKey]={dx:gh.gx-a.gx,dy:gh.gy-a.gy,w:pl.w,h:pl.h,lv:0};
+  feed("Built the <b>"+def.name+"</b>"+(def.levels?" — the <b>"+ld.name+"</b> ("+pl.w+"×"+pl.h+")":"")+" inside the "+areaTitle(a)+" on Floor "+a.floor+" ("+money(ld.cost)+(ld.upkeep?", "+money(ld.upkeep)+"/mo":"")+", +"+ld.appeal+" Appeal)."+(pl.itemKey==="wifi"?" <b>The hotel now has Wi-Fi.</b>":"")+(def.req?" The "+AREA_FUNCS[a.func].name+" is now <b>functional</b>.":"")+(def.levels?" Upgrade it from the area's menu to grow it to a larger size.":"")+(hasAnyLobby()&&!areaReachable(a)?" <b>Warning:</b> no path from the lobby reaches this area — it earns <b>no benefit</b> until a hallway path touches it.":""));
   toast(def.name+" built"+(def.req?" — "+AREA_FUNCS[a.func].name+" is functional":"")); sfx("pop");
+  G.selected={kind:"areaItem",areaId:a.id,key:pl.itemKey}; G.selectedRoomId=null;
+  return true;
+}
+/* Upgrade a levelled piece (the Pool) to its next, bigger size.
+   It grows in place when the bigger footprint fits where it sits;
+   otherwise it takes the first spot inside the area where the
+   bigger footprint does fit. If it fits nowhere, the answer is to
+   expand the area or move pieces around — never to spill out. */
+function upgradeAreaItem(a,key){
+  if(!a||!a.func)return;
+  var def=areaItemDef(a.func,key), it=a.items&&a.items[key];
+  if(!def||!def.levels||!it||typeof it!=="object")return;
+  var lv=it.lv||0, nx=def.levels[lv+1]; if(!nx)return;
+  var ndx=it.dx||0, ndy=it.dy||0;
+  if(!areaItemFits(a,key,ndx,ndy,nx.w,nx.h)){
+    var sp=areaItemFindSpot(a,key,nx.w,nx.h);
+    if(!sp){toast("The "+nx.name+" ("+nx.w+"×"+nx.h+") doesn't fit inside this "+a.w+"×"+a.h+" area with everything else in the way — expand the area or move pieces around first.");refreshSelInfo();return;}
+    ndx=sp.dx; ndy=sp.dy;
+  }
+  if(!spend(nx.cost))return;
+  it.dx=ndx; it.dy=ndy; it.w=nx.w; it.h=nx.h; it.lv=lv+1;
+  feed("Upgraded the <b>"+def.name+"</b> in the "+areaTitle(a)+" to the <b>"+nx.name+"</b> — now "+nx.w+"×"+nx.h+" tiles inside the area ("+money(nx.cost)+(nx.upkeep?", "+money(nx.upkeep)+"/mo":"")+", +"+nx.appeal+" Appeal).");
+  toast(def.name+": "+nx.name+" — "+nx.w+"×"+nx.h); sfx("pop");
   rebuildScene(); updateHUD(); refreshSelInfo();
+}
+function removeAreaItem(a,key){
+  if(!a||!a.func||!(a.items&&a.items[key]))return;
+  var def=areaItemDef(a.func,key); if(!def)return;
+  var deps=(AREA_ITEMS[a.func]||[]).filter(function(d){return d.needs===key&&a.items[d.key];});
+  if(deps.length){toast("The "+deps.map(function(d){return d.name;}).join(" and ")+" need"+(deps.length>1?"":"s")+" the "+def.name+" — remove those first.");refreshSelInfo();return;}
+  if(!armCheck("areaitem:"+a.id+":"+key)){toast("Remove the "+def.name+"? Tap Remove again to confirm — you get $0 back.");refreshSelInfo();return;}
+  delete a.items[key];
+  feed("Removed the <b>"+def.name+"</b> from the "+areaTitle(a)+" — $0 back. Its tiles inside the area are free again.");
+  toast(def.name+" removed — $0 back.");
+  G.selected={kind:"area",id:a.id};
+  rebuildScene(); updateHUD(); refreshSelInfo();
+}
+/* Start moving ONE piece inside its area. The move flow's ghost is
+   clamped to the area's walls (see computeGhost), so the piece can
+   be shuffled anywhere inside — and nowhere else. */
+function startMoveAreaItem(a,key){
+  if(!a||!a.func)return;
+  var it=a.items&&a.items[key]; if(!it||typeof it!=="object")return;
+  var def=areaItemDef(a.func,key); if(!def)return;
+  startMove({moveKind:"areaItem",areaId:a.id,itemKey:key,label:def.name+" — inside the "+areaTitle(a),w:it.w||areaItemDefSize(def,it.lv||0)[0],h:it.h||areaItemDefSize(def,it.lv||0)[1],rot:0,floor:a.floor,fromGx:a.gx+(it.dx||0),fromGy:a.gy+(it.dy||0)});
 }
 function expandArea(a,dir){
   if(!a)return;
@@ -1646,13 +1842,11 @@ function renderBuild(b){
   var h="<h3>Build</h3>";
   var hallCount=Object.keys(G.hallTiles||{}).length;
   var conn=connectedCount();
-  h+='<div class="card"><div class="t"><span>Land</span><span class="pill">'+GRID_W+'×'+GRID_H+' tiles · every floor</span></div>'+
-     '<div class="row"><span class="pill good">Open land — build anywhere, nothing to buy</span></div></div>';
   h+='<div class="card"><div class="t"><span>Hallway 2×2</span><span class="pill">'+hallCount+' tiles · '+conn+'/'+Math.max(1,G.rooms.length)+' connected</span></div>'+
      '<div class="row"><button data-placehall="1">Place — '+money(HALL_COST*4)+'</button></div></div>';
   var abw=AREA_BUILD_W,abh=AREA_BUILD_H,abTiles=abw*abh;
   h+='<div class="card"><div class="t"><span>Build an Area — $300 / tile</span><span class="pill">'+abw+'×'+abh+' · '+abTiles+' tiles · '+money(abTiles*AREA_TILE_COST)+'</span></div>'+
-     '<div class="sub">For everything except guest rooms: define a size, place the empty shell, then tap it to designate what it is — Lobby, Pool, Gym, Bar, Spa, Dining, Meeting, Expo, Garden, Parking, Extras — and build the inside from its menu (a pool room gets a pool, slide, ladder, shower and bathroom; a lobby gets a desk, fountain, couches, tables and Wi-Fi). A placed area expands in any direction at $300 per added tile. Guest rooms are not built this way — they stay at the fixed size of their tier, from the Rooms list below. <b>Once a lobby exists, an area only counts when a hallway path from the lobby touches it</b> — an unconnected area earns no Appeal and satisfies no guest, exactly like a room with no path to its door.</div>'+
+     '<div class="sub">For everything except guest rooms: define a size, place the empty shell, then tap it to designate what it is — Lobby, Pool, Gym, Bar, Spa, Dining, Meeting, Expo, Garden, Parking, Extras — and build the inside from its menu (a pool room gets a pool, slide, ladder, shower and bathroom; a lobby gets a desk, fountain, couches, tables and Wi-Fi). Each inside piece is placed at a spot you choose inside its area, at its real size: the pool goes in small and can be upgraded to larger sizes, and any piece can be moved around inside its area — tap the piece itself to pick it — but a piece can never leave its area. Moving the whole area takes everything inside with it. A placed area expands in any direction at $300 per added tile. Guest rooms are not built this way — they stay at the fixed size of their tier, from the Rooms list below. <b>Once a lobby exists, an area only counts when a hallway path from the lobby touches it</b> — an unconnected area earns no Appeal and satisfies no guest, exactly like a room with no path to its door.</div>'+
      '<div class="row"><span class="pill">Width</span><button data-areaw="-1">−</button><span class="pill">'+abw+'</span><button data-areaw="1">+</button><span class="pill">Height</span><button data-areah="-1">−</button><span class="pill">'+abh+'</span><button data-areah="1">+</button><button class="primary" data-placearea="1">Place area — '+money(abTiles*AREA_TILE_COST)+'</button></div></div>';
   var areaLobby=(G.areas||[]).filter(function(a){return a.func==="lobby";})[0];
   h+='<div class="card"><div class="t"><span>Lobby — area</span><span class="pill">'+(G.lobby>0?LOBBY_TIERS[G.lobby].name+" (earlier container) · "+lobbyW()+"×"+lobbyH():(areaLobby?(areaFunctional(areaLobby)?"Functional · "+areaLobby.w+"×"+areaLobby.h:"Placed — needs its Lobby Desk · "+areaLobby.w+"×"+areaLobby.h):"Not built"))+'</span></div>'+
@@ -1833,12 +2027,14 @@ function isLobbyTile(gx,gy){
 }
 function roomAtCell(gx,gy){return roomAtCellF(1,gx,gy);}
 function roomAtCellF(floor,gx,gy){
+  if(G&&typeof _perfCache!=="undefined"){var m=cellMaps();return m.room[floor*100000+gx*100+gy]||null;}
   for(var i=0;i<G.rooms.length;i++){var r=G.rooms[i];if(r.floor!==floor)continue;
     if(gx>=r.gx&&gx<r.gx+roomW(r)&&gy>=r.gy&&gy<r.gy+roomH(r))return r;}
   return null;
 }
 /* Stairwells & elevators occupy the same tiles on EVERY floor. */
 function verticalAt(gx,gy){
+  if(G&&typeof _perfCache!=="undefined"){var m=cellMaps();return m.vert[gx*100+gy]||null;}
   var vs=G.verticals||[];
   for(var i=0;i<vs.length;i++){var v=vs[i];
     if(gx>=v.gx&&gx<v.gx+v.w&&gy>=v.gy&&gy<v.gy+v.h)return v;}
@@ -1847,6 +2043,7 @@ function verticalAt(gx,gy){
 /* Which amenity (if any) covers this cell on this floor? Amenities
    occupy real grid tiles, exactly like rooms and shafts. */
 function amenityAtCellF(floor,gx,gy){
+  if(G&&typeof _perfCache!=="undefined"){var m=cellMaps();return m.amen[floor*100000+gx*100+gy]||null;}
   var spots=G.amenitySpots||{};
   for(var k in spots){var sp=spots[k]; if(!sp||sp.floor!==floor)continue;
     if(gx>=sp.gx&&gx<sp.gx+sp.w&&gy>=sp.gy&&gy<sp.gy+sp.h)return k;}
@@ -1880,44 +2077,113 @@ function hallBlockStatus(f,gx,gy){
   }
   return {valid:fresh>0,fresh:fresh};
 }
+/* ================= PERFORMANCE CACHES =================
+   THE BOTTLENECK this fixes: interacting with an area used to pay
+   for the same expensive work over and over in a single tap. The
+   reachability flood (a BFS over the whole 80×48 plot) was re-run
+   from scratch by EVERY roomReachable / areaReachable /
+   amenitySpotReachable / verticalLive call — and one interaction
+   makes dozens of those calls (appeal totals, the caption, the
+   build-menu signature, every room and area drawn) — each flood
+   also used queue.shift(), which is O(n) per step. And every tile
+   lookup (roomAtCellF, areaAtCellF, amenityAtCellF, verticalAt)
+   linearly scanned every room / area / spot for every one of the
+   3,840 tiles drawn. All of that is now computed ONCE per layout
+   and cached against a signature of the layout itself: any change
+   to hallways, rooms, areas, spots, shafts, the lobby or the
+   dining rect changes the signature and the caches rebuild;
+   unchanged, every caller shares the one result. Callers only ever
+   READ the returned sets, so sharing them is safe. */
+var _perfCache=null;
+function _pc(){
+  if(!_perfCache)_perfCache={reachSig:null,reach1:null,reachF:{},vertSig:null,vertLive:false,
+    cellSig:null,cell:null,appealSig:null,appeal:0,peopleSig:"\u0001",staticKey:null,staticLayers:null};
+  return _perfCache;
+}
+function layoutSignature(){
+  if(!G)return "nogame";
+  var s=[G.lobby,G.lobbyGx,G.lobbyGy,G.lobbyW,G.lobbyH,G.lobbyRot||0,
+    G.diningGx,G.diningGy,G.diningW,G.diningH,G.diningRot||0,G.floors];
+  /* hallway tiles: a count + a strong rolling hash of the keys, so
+     any tile laid or removed changes the signature */
+  var ht=G.hallTiles||{},hc=0,hh=0;
+  for(var k in ht){
+    if(!ht[k])continue;
+    hc++;
+    for(var ci=0;ci<k.length;ci++)hh=((hh*31)+k.charCodeAt(ci))>>>0;
+    hh=(hh^(hc*2654435761))>>>0;
+  }
+  s.push(hc,hh);
+  s.push((G.verticals||[]).map(function(v){return v.kind+","+v.gx+","+v.gy;}).join(";"));
+  s.push((G.rooms||[]).map(function(r){return r.id+","+r.type+","+r.floor+","+r.gx+","+r.gy+","+(r.rot||0)+","+(r.cw||"")+","+(r.ch||"");}).join(";"));
+  s.push(areasList().map(function(a){return a.id+","+a.floor+","+a.gx+","+a.gy+","+a.w+","+a.h+","+(a.func||"")+","+JSON.stringify(a.items||{});}).join(";"));
+  var sp=G.amenitySpots||{},sk=[];
+  for(var ak in sp){var p=sp[ak];if(p)sk.push(ak+","+p.floor+","+p.gx+","+p.gy+","+p.w+","+p.h);}
+  s.push(sk.join(";"));
+  return s.join("|");
+}
+/* One cell -> thing index for the whole plot, rebuilt only when the
+   layout signature changes. Turns the per-tile linear scans in the
+   renderer into O(1) map lookups. */
+function cellMaps(){
+  var pc=_pc(),sig=layoutSignature();
+  if(pc.cellSig===sig&&pc.cell)return pc.cell;
+  var room={},area={},amen={},vert={};
+  function K(f,x,y){return f*100000+x*100+y;}
+  (G.rooms||[]).forEach(function(r){var w=roomW(r),h=roomH(r);for(var y=r.gy;y<r.gy+h;y++)for(var x=r.gx;x<r.gx+w;x++)room[K(r.floor,x,y)]=r;});
+  areasList().forEach(function(a){for(var y=a.gy;y<a.gy+a.h;y++)for(var x=a.gx;x<a.gx+a.w;x++)area[K(a.floor,x,y)]=a;});
+  var spots=G.amenitySpots||{};
+  for(var k in spots){var p=spots[k];if(!p)continue;for(var y2=p.gy;y2<p.gy+p.h;y2++)for(var x2=p.gx;x2<p.gx+p.w;x2++)amen[K(p.floor,x2,y2)]=k;}
+  (G.verticals||[]).forEach(function(v){for(var y3=v.gy;y3<v.gy+v.h;y3++)for(var x3=v.gx;x3<v.gx+v.w;x3++)vert[x3*100+y3]=v;});
+  pc.cell={room:room,area:area,amen:amen,vert:vert};pc.cellSig=sig;
+  return pc.cell;
+}
 /* Breadth-first flood from the lobby across walkable tiles (hallway
    tiles + lobby tiles). Returns the set of reachable "gx,gy" keys.
    Because the flood steps onto any hallway tile next to the lobby,
-   ANY path that touches the lobby joins the network. */
+   ANY path that touches the lobby joins the network. The result is
+   CACHED per layout (see above): the dozens of reachability checks
+   in one render or one guest decision share a single flood. */
 function reachableSet(){
+  var pc=_pc(),sig=layoutSignature();
+  if(pc.reachSig===sig&&pc.reach1)return pc.reach1;
   var seen={},queue=[];
   if(G.lobby>0&&G.lobbyGx!=null)for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){seen[x+","+y]=true;queue.push([x,y]);}
   /* a FUNCTIONAL lobby area (desk built) is a lobby too: the flood
      starts from its tiles exactly as from the legacy container */
   functionalLobbyAreas().forEach(function(a){for(var y2=a.gy;y2<a.gy+a.h;y2++)for(var x2=a.gx;x2<a.gx+a.w;x2++){var kk=x2+","+y2;if(!seen[kk]){seen[kk]=true;queue.push([x2,y2]);}}});
-  var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(queue.length){
-    var cur=queue.shift();
+  var dirs=[[1,0],[-1,0],[0,1],[0,-1]],head=0;
+  while(head<queue.length){
+    var cur=queue[head++];
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(seen[k]||!inGrid(nx,ny))continue;
       if(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)||isAreaWalkTile(nx,ny)){seen[k]=true;queue.push([nx,ny]);}
     }
   }
+  pc.reachSig=sig;pc.reach1=seen;
   return seen;
 }
 /* Reachable tiles on an upper floor: flood from the stair/elevator
    shafts across that floor's own hallway tiles. */
 function reachableSetFloor(floor){
   if(floor===1)return reachableSet();
+  var pc=_pc(),sig=layoutSignature(),cacheKey=floor+"@"+sig;
+  if(pc.reachF[cacheKey])return pc.reachF[cacheKey];
   var seen={},queue=[];
   (G.verticals||[]).forEach(function(v){
     for(var y=v.gy;y<v.gy+v.h;y++)for(var x=v.gx;x<v.gx+v.w;x++){var k=x+","+y;if(!seen[k]){seen[k]=true;queue.push([x,y]);}}
   });
-  var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(queue.length){
-    var cur=queue.shift();
+  var dirs=[[1,0],[-1,0],[0,1],[0,-1]],head=0;
+  while(head<queue.length){
+    var cur=queue[head++];
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(seen[k]||!inGrid(nx,ny))continue;
       if(hasHall(floor,nx,ny)||verticalAt(nx,ny)){seen[k]=true;queue.push([nx,ny]);}
     }
   }
+  pc.reachF={};pc.reachF[cacheKey]=seen; /* one floor's flood per layout is plenty */
   return seen;
 }
 /* A tile "touches" a reachable set when the tile itself OR any
@@ -1939,14 +2205,20 @@ function touchesSet(seen,gx,gy){
    it or right beside it) connects it — and through it, every floor
    the shaft serves. */
 function verticalLive(){
-  var vs=G.verticals||[];
-  if(!vs.length)return false;
-  if(!hasAnyLobby())return true;
-  var seen=reachableSet();
-  for(var i=0;i<vs.length;i++){var v=vs[i];
-    for(var y=v.gy;y<v.gy+v.h;y++)for(var x=v.gx;x<v.gx+v.w;x++)if(touchesSet(seen,x,y))return true;
+  var pc=_pc(),sig=layoutSignature();
+  if(pc.vertSig===sig)return pc.vertLive;
+  var vs=G.verticals||[],live=false;
+  if(vs.length){
+    if(!hasAnyLobby())live=true;
+    else{
+      var seen=reachableSet();
+      for(var i=0;i<vs.length&&!live;i++){var v=vs[i];
+        for(var y=v.gy;y<v.gy+v.h&&!live;y++)for(var x=v.gx;x<v.gx+v.w;x++)if(touchesSet(seen,x,y)){live=true;break;}
+      }
+    }
   }
-  return false;
+  pc.vertSig=sig;pc.vertLive=live;
+  return live;
 }
 function roomReachable(r){
   var df=doorFront(r);
@@ -2030,8 +2302,9 @@ function gridPathToRoom(r){
   var prev={},queue=[],found=null;
   if(G.lobbyGx!=null)for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){var k0=x+","+y;if(!prev[k0]){prev[k0]="start";queue.push([x,y]);if(targets[k0])found=k0;}}
   functionalLobbyAreas().forEach(function(a){for(var yy=a.gy;yy<a.gy+a.h;yy++)for(var xx=a.gx;xx<a.gx+a.w;xx++){var ka=xx+","+yy;if(!prev[ka]){prev[ka]="start";queue.push([xx,yy]);if(targets[ka])found=ka;}}});
-  while(queue.length&&!found){
-    var cur=queue.shift();
+  var head=0;
+  while(head<queue.length&&!found){
+    var cur=queue[head++];
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(prev[k]||!inGrid(nx,ny))continue;
@@ -2056,9 +2329,9 @@ function gridPathToVertical(){
   var prev={},queue=[],found=null;
   if(G.lobbyGx!=null)for(var y0=G.lobbyGy;y0<G.lobbyGy+lobbyH();y0++)for(var x0=G.lobbyGx;x0<G.lobbyGx+lobbyW();x0++){var k0=x0+","+y0;if(!prev[k0]){prev[k0]="start";queue.push([x0,y0]);if(targets[k0])found=k0;}}
   functionalLobbyAreas().forEach(function(a){for(var yy=a.gy;yy<a.gy+a.h;yy++)for(var xx=a.gx;xx<a.gx+a.w;xx++){var ka=xx+","+yy;if(!prev[ka]){prev[ka]="start";queue.push([xx,yy]);if(targets[ka])found=ka;}}});
-  var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(queue.length&&!found){
-    var cur=queue.shift();
+  var dirs=[[1,0],[-1,0],[0,1],[0,-1]],head=0;
+  while(head<queue.length&&!found){
+    var cur=queue[head++];
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(prev[k]||!inGrid(nx,ny))continue;
@@ -2504,6 +2777,30 @@ function renderStage(){
       captionEl.textContent="Floor "+G.curFloor+" · "+rooms.length+" room"+(rooms.length===1?"":"s")+(rooms.length?" · "+connF+" connected":" · blank")+(aNoPathF?" · "+aNoPathF+" area"+(aNoPathF===1?"":"s")+" NO PATH":"")+" · "+((G.verticals||[]).length?"shaft reaches here":"NO STAIRS/ELEVATOR")+(dirty?" · "+dirty+" dirty":"")+(broken?" · "+broken+" broken":"")+" · drag to pan · pinch / scroll to zoom";
     }
   }
+  buildPeopleCached();
+}
+/* People used to be REBUILT on every render: buildStaff and
+   buildOccupants tore down every staff figure and room occupant
+   DOM node and recreated them from scratch — and renders happen on
+   every area tap, placement and menu refresh, so a single tap paid
+   for a full people rebuild on top of the scene redraw. The figures
+   only depend on the signature below (staff counts, which floor is
+   on screen, the layout they stand on, which cleaners are on this
+   floor, which guests are walking, and which rooms are occupied),
+   so when it hasn't changed the existing figures are left exactly
+   as they are — the tick loops keep moving and re-facing them. */
+function peopleSignature(){
+  return [G.view,G.curFloor,layoutSignature(),
+    Object.keys(STAFF_ROLES).map(function(k){return G.staff[k];}).join(","),
+    cleaners.map(function(c){return c.idx+":"+c.floor;}).join(","),
+    walkers.map(function(w){return w.guest?w.guest.id:"";}).join(","),
+    (G.rooms||[]).map(function(r){return r.state==="occupied"?(r.id+":"+(r.guest?r.guest.id:"")):"";}).join(",")
+  ].join("|");
+}
+function buildPeopleCached(){
+  var pc=_pc(),sig=peopleSignature();
+  if(pc.peopleSig===sig)return;
+  pc.peopleSig=sig;
   buildStaff();
   buildOccupants();
 }
@@ -2582,6 +2879,16 @@ function computeGhost(g){
   var rot=PLACE.rot||0, pf=PLACE.floor||1;
   if(PLACE.kind==="move"){
     var mw=PLACE.w||2, mh=PLACE.h||2;
+    if(PLACE.moveKind==="areaItem"){
+      /* moving a piece inside its area: the ghost is CLAMPED to the
+         area's walls — it can never be previewed outside them — and
+         it only fits where it clears the area's other pieces */
+      var ma=areaById(PLACE.areaId);
+      if(!ma)return {gx:0,gy:0,w:mw,h:mh,rot:rot,valid:false};
+      var mgx2=Math.max(ma.gx,Math.min(ma.gx+ma.w-mw,Math.floor(g.gx)-Math.floor((mw-1)/2)));
+      var mgy2=Math.max(ma.gy,Math.min(ma.gy+ma.h-mh,Math.floor(g.gy)-Math.floor((mh-1)/2)));
+      return {gx:mgx2,gy:mgy2,w:mw,h:mh,rot:rot,valid:areaItemFits(ma,PLACE.itemKey,mgx2-ma.gx,mgy2-ma.gy,mw,mh)};
+    }
     var mgx=Math.max(0,Math.min(GRID_W-mw,Math.floor(g.gx)-Math.floor((mw-1)/2)));
     var mgy=Math.max(0,Math.min(GRID_H-mh,Math.floor(g.gy)-Math.floor((mh-1)/2)));
     var mValid=moveFootprintFree(PLACE,mgx,mgy);
@@ -2643,6 +2950,16 @@ function computeGhost(g){
     var sx=Math.max(0,Math.min(GRID_W-2,Math.floor(g.gx)));
     var sy=Math.max(0,Math.min(GRID_H-2,Math.floor(g.gy)));
     return {gx:sx,gy:sy,w:2,h:2,rot:0,valid:footprintFreeAll(sx,sy,2,2)};
+  }
+  if(PLACE.kind==="areaItem"){
+    /* placing a new piece inside its area: same clamp as moving
+       one — the preview can never leave the area's walls */
+    var pa=areaById(PLACE.areaId);
+    if(!pa)return null;
+    var pw2=PLACE.w||1, ph2=PLACE.h||1;
+    var pgx=Math.max(pa.gx,Math.min(pa.gx+pa.w-pw2,Math.floor(g.gx)-Math.floor((pw2-1)/2)));
+    var pgy=Math.max(pa.gy,Math.min(pa.gy+pa.h-ph2,Math.floor(g.gy)-Math.floor((ph2-1)/2)));
+    return {gx:pgx,gy:pgy,w:pw2,h:ph2,rot:0,valid:areaItemFits(pa,PLACE.itemKey,pgx-pa.gx,pgy-pa.gy,pw2,ph2)};
   }
   return null;
 }
@@ -2722,18 +3039,18 @@ function moveFootprintFree(pl,gx,gy){
   return true;
 }
 function startMove(spec){
-  PLACE={kind:"move",moveKind:spec.moveKind,key:null,roomId:spec.roomId||null,amenKey:spec.amenKey||null,areaId:spec.areaId||null,
+  PLACE={kind:"move",moveKind:spec.moveKind,key:null,roomId:spec.roomId||null,amenKey:spec.amenKey||null,areaId:spec.areaId||null,itemKey:spec.itemKey||null,
     label:spec.label,cost:0,w:spec.w,h:spec.h,rot:spec.rot||0,floor:spec.floor||1,fromGx:spec.fromGx,fromGy:spec.fromGy,
     ghost:null};
   closeDrawer();
   var si=document.getElementById("selInfo"); if(si)si.style.display="none";
-  if(G.curFloor!==PLACE.floor&&(spec.moveKind==="room"||spec.moveKind==="amenity"))G.curFloor=PLACE.floor;
+  if(G.curFloor!==PLACE.floor&&(spec.moveKind==="room"||spec.moveKind==="amenity"||spec.moveKind==="areaItem"))G.curFloor=PLACE.floor;
   if(spec.moveKind==="lobby"||spec.moveKind==="vertical"||spec.moveKind==="dining")G.curFloor=1;
   var bar=document.getElementById("placeBar"); if(bar)bar.style.display="block";
   var lab=document.getElementById("placeLabel"); if(lab)lab.innerHTML="<b>Moving: "+spec.label+"</b> — free";
   var rl=document.getElementById("rotLabel"); if(rl)rl.textContent=ROT_NAMES[PLACE.rot];
   var rb=document.getElementById("btnRotate"); if(rb)rb.style.display=(spec.moveKind==="room"||spec.moveKind==="lobby")?"":"none";
-  var hint=document.getElementById("placeHint"); if(hint)hint.textContent="Tap a new spot to preview · ⟳ rotate · hold 1s to move it there · Cancel keeps it where it is.";
+  var hint=document.getElementById("placeHint"); if(hint)hint.textContent=spec.moveKind==="areaItem"?"This piece must stay inside its area — tap a spot inside the area · hold 1s to drop it there · Cancel keeps it where it is.":"Tap a new spot to preview · ⟳ rotate · hold 1s to move it there · Cancel keeps it where it is.";
   PLACE.ghost={gx:spec.fromGx,gy:spec.fromGy,w:spec.w,h:spec.h,rot:PLACE.rot,valid:true};
   if(spec.moveKind==="room"||spec.moveKind==="lobby")PLACE.ghost.door=doorFrontAt(spec.fromGx,spec.fromGy,PLACE.rot,spec.w,spec.h);
   rebuildScene(); updateHUD();
@@ -2774,9 +3091,17 @@ function applyMove(){
   }else if(PLACE.moveKind==="area"){
     var ar2=areaById(PLACE.areaId); if(!ar2)return;
     ar2.gx=gh.gx; ar2.gy=gh.gy; ar2.floor=PLACE.floor||ar2.floor;
-    feed("Moved the <b>"+areaTitle(ar2)+"</b> to Floor "+ar2.floor+" at "+gh.gx+","+gh.gy+"." +(ar2.func&&hasAnyLobby()&&!areaReachable(ar2)?" <b>Warning:</b> no path from the lobby reaches it here — it earns nothing until connected.":""));
+    feed("Moved the <b>"+areaTitle(ar2)+"</b> to Floor "+ar2.floor+" at "+gh.gx+","+gh.gy+" — everything built inside moved with it." +(ar2.func&&hasAnyLobby()&&!areaReachable(ar2)?" <b>Warning:</b> no path from the lobby reaches it here — it earns nothing until connected.":""));
     toast(areaTitle(ar2)+" moved");
     G.selected={kind:"area",id:ar2.id};
+  }else if(PLACE.moveKind==="areaItem"){
+    var aa3=areaById(PLACE.areaId); if(!aa3)return;
+    var itm3=(aa3.items||{})[PLACE.itemKey]; if(!itm3)return;
+    itm3.dx=gh.gx-aa3.gx; itm3.dy=gh.gy-aa3.gy;
+    var def3=areaItemDef(aa3.func,PLACE.itemKey);
+    feed("Moved the <b>"+(def3?def3.name:PLACE.itemKey)+"</b> within the "+areaTitle(aa3)+" — pieces always stay inside their area.");
+    toast((def3?def3.name:"Piece")+" moved inside the area");
+    G.selected={kind:"areaItem",areaId:aa3.id,key:PLACE.itemKey}; G.selectedRoomId=null;
   }
   sfx("pop");
 }
@@ -2803,6 +3128,7 @@ function executePlacement(){
   else if(kind==="dining"){ if(!placeDining(gh.gx,gh.gy)){toast("That dining area won't fit there.");return;} }
   else if(kind==="amenity"){ if(!placeAmenity(key,gh.gx,gh.gy,pf)){toast("That won't fit there.");return;} }
   else if(kind==="area"){ if(!placeArea(gh.gx,gh.gy,pf)){toast("That area won't fit there.");return;} }
+  else if(kind==="areaItem"){ if(!placeAreaItemAt(PLACE,gh)){toast("That piece won't fit there inside the area.");return;} }
   else if(kind==="stairs"||kind==="elevator"){ if(!placeVertical(kind,gh.gx,gh.gy)){toast("That shaft won't fit there — it must be free on every floor.");return;} }
   stopHold();
   if(!keep){PLACE=null; var bar=document.getElementById("placeBar"); if(bar)bar.style.display="none";}
@@ -3176,21 +3502,52 @@ function drawHallWalls(f){
    single sorted pass in its floor's draw function, so nothing in
    the back can ever paint over something in front of it. */
 function depthKey(gx,gy,w,h){return gx+gy+((w||1)+(h||1))/2;}
-function drawGroundGrid(){
-  OX=Math.round(CVW/2-(GRID_W-GRID_H)*8);
-  /* centre the plot vertically in whatever screen space the
-     full-screen canvas has beyond the land's own height */
-  OY=72+Math.max(0,Math.round((CVH-((GRID_W+GRID_H)*8+150))/2));
-  var c=cxg;c.fillStyle="#10281c";c.fillRect(0,0,CVW,CVH);
-  var gx,gy,i;
+/* ---------- Static ground layers (pre-rendered, cached) ----------
+   The single most expensive part of the renderer was the ground
+   itself: EVERY render walked all 3,840 tiles and drew each one
+   with a clipped, affine-warped image (the grass diamond on every
+   empty tile, the carpet on every hallway tile) into the
+   supersampled canvas — and renders happen on every tap, every
+   menu refresh and every image load. The ground only changes when
+   the layout does, so it is now rendered ONCE per layout into
+   offscreen layers and each render just blits them: the flat
+   ground in one layer, the hallway half-walls in another (so the
+   hallway-placement fade can still fade the walls and the things
+   standing, without fading the grass). Layers are keyed by the
+   layout signature plus canvas size / render scale and whether
+   the grass and carpet images have loaded, so a layout change or
+   a late image load rebuilds them exactly once. Only one floor's
+   layers are kept at a time. */
+function makeStaticLayer(){var cnv=document.createElement("canvas");cnv.width=Math.round(CVW*RS);cnv.height=Math.round(CVH*RS);return cnv;}
+function staticLayersFor(key,builders){
+  var pc=_pc();
+  if(pc.staticKey===key&&pc.staticLayers)return pc.staticLayers;
+  var mainCx=cxg,layers={};
+  Object.keys(builders).forEach(function(name){
+    var cnv=makeStaticLayer();
+    cxg=cnv.getContext("2d");cxg.setTransform(RS,0,0,RS,0,0);
+    builders[name]();
+    layers[name]=cnv;
+  });
+  cxg=mainCx;
+  pc.staticKey=key;pc.staticLayers=layers;
+  return layers;
+}
+function blitLayer(cnv,alpha){
+  if(alpha!=null&&alpha!==1)cxg.globalAlpha=alpha;
+  cxg.drawImage(cnv,0,0,CVW,CVH);
+  if(alpha!=null&&alpha!==1)cxg.globalAlpha=1;
+}
+/* The flat Floor-1 ground: lawn base, every grid tile, the street
+   and the on-ground hint lettering. Drawn into the cached layer —
+   see staticLayersFor above. */
+function drawGroundTiles(){
+  var gx,gy;
   var seen=reachableSet();
   /* lawn base under the whole grid */
   var gc=[iso(-0.6,-0.6),iso(GRID_W+0.6,-0.6),iso(GRID_W+0.6,GRID_H+0.6),iso(-0.6,GRID_H+0.6)];
   PA(gc.map(function(p){return [p[0],p[1]+7];}),"#000000",0.30);
   P(gc,"#27512e",OUT);
-  /* the open-ground tap target goes FIRST: hit regions are tested
-     last-pushed-first, so rooms and the lobby (pushed later) win */
-  hitRegions.push({poly:[iso(0,0),iso(GRID_W,0),iso(GRID_W,GRID_H),iso(0,GRID_H)],fn:function(){handleGroundTap();}});
   /* every grid tile: grass, hallway carpet, lobby honey, or room floor */
   for(gy=0;gy<GRID_H;gy++)for(gx=0;gx<GRID_W;gx++){
     if(roomAtCell(gx,gy)||amenityAtCellF(1,gx,gy)||areaAtCellF(1,gx,gy))continue; /* room, amenity & area floors are drawn with the feature */
@@ -3215,18 +3572,6 @@ function drawGroundGrid(){
       if((gx*7+gy*13)%29===0){var fp=iso(gx+0.5,gy+0.5);R2(fp[0]-1,fp[1],2,2,"#ffd166");}
     }
   }
-  /* hallway half-walls, the same ones the rooms get — drawn after
-     every floor tile, before the lobby, shafts, rooms and amenities
-     that stand along the corridor */
-  /* While HALLWAYS are being placed, everything already standing —
-     hallway walls, rooms, containers, shafts, amenities — draws at
-     50% transparency, so the hallway ghost and the ground behind /
-     under those things stay visible while you aim the next block.
-     The ghost itself is drawn after, at full strength. */
-  var hallFade=(PLACE&&PLACE.kind==="hall");
-  if(hallFade)cxg.globalAlpha=0.5;
-  drawHallWalls(1);
-  if(hallFade)cxg.globalAlpha=1;
   /* street entrance along the south edge */
   var ent=iso(GRID_W/2,GRID_H);
   P([[ent[0]-16,ent[1]],[ent[0]+16,ent[1]],[ent[0]+22,ent[1]+12],[ent[0]-22,ent[1]+12]],"#d9c9a0",OUT);
@@ -3238,6 +3583,31 @@ function drawGroundGrid(){
     cxg.fillStyle="rgba(255,246,214,.85)";cxg.font="700 8px Archivo,sans-serif";cxg.textAlign="center";
     cxg.fillText("NO LOBBY YET",hint[0],hint[1]);
   }
+}
+function drawGroundGrid(){
+  OX=Math.round(CVW/2-(GRID_W-GRID_H)*8);
+  /* centre the plot vertically in whatever screen space the
+     full-screen canvas has beyond the land's own height */
+  OY=72+Math.max(0,Math.round((CVH-((GRID_W+GRID_H)*8+150))/2));
+  var c=cxg;c.fillStyle="#10281c";c.fillRect(0,0,CVW,CVH);
+  /* the open-ground tap target goes FIRST: hit regions are tested
+     last-pushed-first, so rooms and the lobby (pushed later) win */
+  hitRegions.push({poly:[iso(0,0),iso(GRID_W,0),iso(GRID_W,GRID_H),iso(0,GRID_H)],fn:function(){handleGroundTap();}});
+  /* While HALLWAYS are being placed, everything already standing —
+     hallway walls, rooms, containers, shafts, amenities — draws at
+     50% transparency, so the hallway ghost and the ground behind /
+     under those things stay visible while you aim the next block.
+     The ghost itself is drawn after, at full strength. The flat
+     ground does NOT fade — it comes from the cached layer at full
+     strength, and the cached hallway-wall layer is blitted at 50%
+     instead of being redrawn faded. */
+  var hallFade=(PLACE&&PLACE.kind==="hall");
+  var layers=staticLayersFor("g1|"+layoutSignature()+"|"+CVW+"x"+CVH+"x"+RS+"|"+(tileImg("grass")?1:0)+(tileImg("carpet")?1:0),{
+    ground:function(){drawGroundTiles();},
+    walls:function(){drawHallWalls(1);}
+  });
+  blitLayer(layers.ground);
+  blitLayer(layers.walls,hallFade?0.5:null);
   /* EVERYTHING standing on the ground — the lobby and dining
      containers, the stair/elevator shafts, rooms and placed
      amenities — in ONE back-to-front pass (see depthKey above).
@@ -4228,6 +4598,9 @@ function drawAmenitySpot(key,spot){
 function drawAreaSpot(a){
   var x0=a.gx,y0=a.gy,W=a.w,H=a.h,cx=x0+W/2,cy=y0+H/2,it=a.items||{};
   var func=a.func||"shell";
+  /* each built piece is drawn at ITS OWN rect inside the area —
+     where the player placed it, at the size it was built at */
+  function irect(key){var r=areaItemRect(a,key);return r?{x:r.gx,y:r.gy,w:r.w,h:r.h,cx:r.gx+r.w/2,cy:r.gy+r.h/2}:null;}
   var fc={shell:["#b9ac8c","#a89a78"],lobby:[PAL.honey,PAL.terra],pool:[PAL.stone,"#cfc4a4"],gym:["#2c3e46","#26333b"],bar:[PAL.cream2,PAL.terra],spa:[PAL.wood,"#7a5126"],dining:["#f2e6c0",PAL.terra],meeting:["#5b2a4e","#532646"],expo:["#cfc8b8","#c2bba8"],garden:[PAL.gM,"#357a32"],parking:["#565656","#4c4c4c"],extras:["#1d5a56","#185049"]}[func]||["#b9ac8c","#a89a78"];
   for(var ty=0;ty<H;ty++)for(var tx=0;tx<W;tx++)tile(x0+tx,y0+ty,((tx+ty)%2===0)?fc[0]:fc[1]);
   /* back walls first — the inside paints over them */
@@ -4237,58 +4610,58 @@ function drawAreaSpot(a){
     P([iso(x0+0.3,y0+0.3),iso(x0+W-0.3,y0+0.3),iso(x0+W-0.3,y0+H-0.3),iso(x0+0.3,y0+H-0.3)],null,PAL.goldD,1);
     cxg.setLineDash([]);
   }else if(func==="lobby"){
-    if(it.desk){var dw=Math.min(W-0.6,2.3);box(x0+0.3,y0+0.3,dw,0.8,11,PAL.woodL,PAL.wood,"#6e4520");var bp=iso(x0+0.3+dw/2,y0+0.7,11);EL(bp[0],bp[1],2.4,2.4,PAL.gold,OUT);}
-    if(it.fountain){var fim=fountainImg(1);if(fim){var fw2=Math.min(W,H)*TW*0.8,fh2=fw2*fim.naturalHeight/fim.naturalWidth;var fcp=iso(cx,cy+0.3);cxg.drawImage(fim,Math.round(fcp[0]-fw2/2),Math.round(fcp[1]+6-fh2),Math.round(fw2),Math.round(fh2));}else{ellip(cx,cy+0.3,Math.min(W,H)*0.30,PAL.stone,PAL.stoneD,2);ellip(cx,cy+0.3,Math.min(W,H)*0.22,PAL.water2,null,3);}}
-    if(it.couches){box(x0+0.25,y0+H-1.0,Math.min(1.7,Math.max(0.7,W-2.0)),0.32,14,"#2a7f7f","#2a7f7f","#256f6a");box(x0+0.25,y0+H-0.68,Math.min(1.7,Math.max(0.7,W-2.0)),0.55,8,"#35948f","#2a7f7f","#1d6f6a");}
-    if(it.tables){ellip(x0+W-0.85,y0+H-0.7,0.30,"#cfe8e4",OUT,5);ellip(cx+0.9,cy+0.5,0.26,"#cfe8e4",OUT,5);}
-    if(it.wifi){var wp2=iso(x0+W-0.45,y0+0.2,20);R2(wp2[0]-3,wp2[1]-3,7,6,"#12262b",OUT);EL(wp2[0],wp2[1],1.6,1.6,PAL.gold);LN(wp2[0]-5,wp2[1]-6,wp2[0]+5,wp2[1]-6,PAL.gold,1);}
+    var rDesk=irect("desk"); if(rDesk){box(rDesk.x+0.08,rDesk.y+0.12,Math.max(0.5,rDesk.w-0.16),Math.max(0.45,rDesk.h-0.24),11,PAL.woodL,PAL.wood,"#6e4520");var bp=iso(rDesk.cx,rDesk.cy,11);EL(bp[0],bp[1],2.4,2.4,PAL.gold,OUT);}
+    var rFou=irect("fountain"); if(rFou){var fim=fountainImg(1);if(fim){var fw2=Math.min(rFou.w,rFou.h)*TW*0.85,fh2=fw2*fim.naturalHeight/fim.naturalWidth;var fcp=iso(rFou.cx,rFou.cy+0.15);cxg.drawImage(fim,Math.round(fcp[0]-fw2/2),Math.round(fcp[1]+6-fh2),Math.round(fw2),Math.round(fh2));}else{ellip(rFou.cx,rFou.cy,Math.min(rFou.w,rFou.h)*0.32,PAL.stone,PAL.stoneD,2);ellip(rFou.cx,rFou.cy,Math.min(rFou.w,rFou.h)*0.23,PAL.water2,null,3);}}
+    var rCou=irect("couches"); if(rCou){box(rCou.x+0.05,rCou.y+0.06,Math.max(0.5,rCou.w-0.1),Math.max(0.2,rCou.h*0.36),14,"#2a7f7f","#2a7f7f","#256f6a");box(rCou.x+0.05,rCou.y+rCou.h*0.44,Math.max(0.5,rCou.w-0.1),Math.max(0.25,rCou.h*0.48),8,"#35948f","#2a7f7f","#1d6f6a");}
+    var rTab=irect("tables"); if(rTab){ellip(rTab.cx,rTab.cy,Math.min(rTab.w,rTab.h)*0.30,"#cfe8e4",OUT,5);if(rTab.w>=2)ellip(rTab.x+rTab.w-0.5,rTab.cy,0.24,"#cfe8e4",OUT,5);}
+    var rWifi=irect("wifi"); if(rWifi){var wp2=iso(rWifi.cx,rWifi.y+0.15,20);R2(wp2[0]-3,wp2[1]-3,7,6,"#12262b",OUT);EL(wp2[0],wp2[1],1.6,1.6,PAL.gold);LN(wp2[0]-5,wp2[1]-6,wp2[0]+5,wp2[1]-6,PAL.gold,1);}
   }else if(func==="pool"){
-    if(it.pool){
-      P([iso(x0+0.35,y0+0.35),iso(x0+W-0.35,y0+0.35),iso(x0+W-0.35,y0+H-0.35),iso(x0+0.35,y0+H-0.35)],PAL.water);
-      P([iso(x0+0.72,y0+0.72),iso(x0+W-0.72,y0+0.72),iso(x0+W-0.72,y0+H-0.72),iso(x0+0.72,y0+H-0.72)],PAL.water2);
-      var sp1=iso(x0+W*0.3,y0+H*0.4);sparkle(sp1[0],sp1[1],3);var sp2=iso(x0+W*0.7,y0+H*0.6);sparkle(sp2[0],sp2[1],3);
+    var rPool=irect("pool"); if(rPool){
+      P([iso(rPool.x+0.12,rPool.y+0.12),iso(rPool.x+rPool.w-0.12,rPool.y+0.12),iso(rPool.x+rPool.w-0.12,rPool.y+rPool.h-0.12),iso(rPool.x+0.12,rPool.y+rPool.h-0.12)],PAL.water);
+      P([iso(rPool.x+0.38,rPool.y+0.38),iso(rPool.x+rPool.w-0.38,rPool.y+0.38),iso(rPool.x+rPool.w-0.38,rPool.y+rPool.h-0.38),iso(rPool.x+0.38,rPool.y+rPool.h-0.38)],PAL.water2);
+      var sp1=iso(rPool.x+rPool.w*0.3,rPool.y+rPool.h*0.4);sparkle(sp1[0],sp1[1],3);var sp2=iso(rPool.x+rPool.w*0.7,rPool.y+rPool.h*0.6);sparkle(sp2[0],sp2[1],3);
     }
-    if(it.slide){for(var si2=0;si2<3;si2++)box(x0+0.25+si2*0.5,y0+0.18,0.46,0.8,4+si2*5,"#7fd4e8","#57b7bd","#3d8fa8");var slp=iso(x0+1.9,y0+0.6,16);LN(slp[0],slp[1],slp[0]+13,slp[1]+9,"#57b7bd",3);}
-    if(it.ladder){var lp3=iso(x0+W-0.55,y0+H-0.4);LN(lp3[0]-4,lp3[1]-10,lp3[0]-4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]+4,lp3[1]-10,lp3[0]+4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]-4,lp3[1]-6,lp3[0]+4,lp3[1]-6,PAL.stoneD,1);LN(lp3[0]-4,lp3[1]-2,lp3[0]+4,lp3[1]-2,PAL.stoneD,1);}
-    if(it.shower){box(x0+W-0.85,y0+0.25,0.6,0.6,16,"#cfe8e4","#9fc8cc","#7fb3b8");var shp2=iso(x0+W-0.55,y0+0.55,22);EL(shp2[0],shp2[1],4,2,"#cfd8d4",OUT);LN(shp2[0],shp2[1]+2,shp2[0],shp2[1]+7,"#bfeff2",1);}
-    if(it.bathroom){box(x0+W-0.95,y0+H-0.95,0.75,0.75,18,"#fdfaf0","#e8e2d2","#d8d0be");var wcp=iso(x0+W-0.57,y0+H-0.57,4);EL(wcp[0],wcp[1],3,2,"#ffffff",OUT);}
+    var rSlide=irect("slide"); if(rSlide){var sw3=Math.max(0.3,(rSlide.w-0.16)/3);for(var si2=0;si2<3;si2++)box(rSlide.x+0.08+si2*sw3,rSlide.y+Math.max(0.05,(rSlide.h-0.7)/2),sw3-0.05,Math.min(0.7,rSlide.h-0.1),4+si2*5,"#7fd4e8","#57b7bd","#3d8fa8");var slp=iso(rSlide.x+rSlide.w-0.1,rSlide.cy,16);LN(slp[0],slp[1],slp[0]+13,slp[1]+9,"#57b7bd",3);}
+    var rLad=irect("ladder"); if(rLad){var lp3=iso(rLad.cx,rLad.cy+0.15);LN(lp3[0]-4,lp3[1]-10,lp3[0]-4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]+4,lp3[1]-10,lp3[0]+4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]-4,lp3[1]-6,lp3[0]+4,lp3[1]-6,PAL.stoneD,1);LN(lp3[0]-4,lp3[1]-2,lp3[0]+4,lp3[1]-2,PAL.stoneD,1);}
+    var rSho=irect("shower"); if(rSho){box(rSho.x+0.14,rSho.y+0.14,Math.max(0.35,rSho.w-0.28),Math.max(0.35,rSho.h-0.28),16,"#cfe8e4","#9fc8cc","#7fb3b8");var shp2=iso(rSho.cx,rSho.cy,22);EL(shp2[0],shp2[1],4,2,"#cfd8d4",OUT);LN(shp2[0],shp2[1]+2,shp2[0],shp2[1]+7,"#bfeff2",1);}
+    var rBath=irect("bathroom"); if(rBath){box(rBath.x+0.1,rBath.y+0.1,Math.max(0.4,rBath.w-0.2),Math.max(0.4,rBath.h-0.2),18,"#fdfaf0","#e8e2d2","#d8d0be");var wcp=iso(rBath.cx,rBath.cy,4);EL(wcp[0],wcp[1],3,2,"#ffffff",OUT);}
   }else if(func==="gym"){
-    if(it.treadmills){var nT=Math.min(3,Math.max(1,Math.floor(W-1)));for(var ti2=0;ti2<nT;ti2++){box(x0+0.3+ti2*1.05,y0+0.25,0.8,0.55,8,"#3a3a3a","#2b2b2b","#1f1f1f");var tp3=iso(x0+0.68+ti2*1.05,y0+0.5,10);EL(tp3[0],tp3[1],2.4,1.6,PAL.gold);}}
-    if(it.weights){box(x0+0.3,y0+H-0.85,W-0.6,0.5,9,PAL.wood,PAL.wood,PAL.woodD);for(var di2=0;di2<5;di2++){var dp2=iso(x0+0.6+di2*Math.max(0.4,(W-1.2)/5),y0+H-0.6,11);EL(dp2[0],dp2[1],1.7,1.7,di2%2?"#232323":PAL.goldD);}}
-    if(it.mats){ellip(x0+W-0.8,y0+H-0.8,0.34,"#e07a5f",OUT,3);ellip(cx,y0+H-0.8,0.34,"#7fb069",OUT,3);}
+    var rTre=irect("treadmills"); if(rTre){var nT=Math.max(1,Math.floor(rTre.w/1.05));for(var ti2=0;ti2<nT;ti2++){box(rTre.x+0.12+ti2*1.05,rTre.y+0.2,0.8,Math.max(0.4,rTre.h-0.35),8,"#3a3a3a","#2b2b2b","#1f1f1f");var tp3=iso(rTre.x+0.5+ti2*1.05,rTre.cy,10);EL(tp3[0],tp3[1],2.4,1.6,PAL.gold);}}
+    var rWei=irect("weights"); if(rWei){box(rWei.x+0.08,rWei.y+0.2,Math.max(0.5,rWei.w-0.16),Math.max(0.3,rWei.h-0.35),9,PAL.wood,PAL.wood,PAL.woodD);for(var di2=0;di2<5;di2++){var dp2=iso(rWei.x+0.35+di2*Math.max(0.3,(rWei.w-0.6)/5),rWei.cy,11);EL(dp2[0],dp2[1],1.7,1.7,di2%2?"#232323":PAL.goldD);}}
+    var rMat=irect("mats"); if(rMat){ellip(rMat.x+0.45,rMat.cy,0.32,"#e07a5f",OUT,3);if(rMat.w>=2)ellip(rMat.x+rMat.w-0.45,rMat.cy,0.32,"#7fb069",OUT,3);}
   }else if(func==="bar"){
-    if(it.counter){box(x0+0.25,y0+0.2,Math.min(W-0.5,4.2),0.55,12,PAL.woodL,PAL.wood,PAL.woodD);for(var bi3=0;bi3<Math.min(6,W);bi3++){var bt3=iso(x0+0.6+bi3*0.8,y0+0.45,15);R2(bt3[0]-1,bt3[1]-4,3,5,["#7fb069","#c9902e","#b4552d"][bi3%3],OUT);}}
-    if(it.stools){for(var st3=0;st3<Math.min(4,Math.floor(W));st3++)box(x0+0.45+st3*0.95,y0+0.95,0.34,0.34,6,PAL.gold,PAL.gold,PAL.goldD);}
-    if(it.tables){ellip(x0+1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=4)ellip(x0+W-1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=5&&H>=4)ellip(cx,cy+0.6,0.32,"#fdfaf0",OUT,6);}
-    if(it.kitchen){box(x0+W-0.8,y0+0.25,0.6,1.2,14,"#e8e2d2","#cfc4a4","#b8ae96");}
+    var rCtr=irect("counter"); if(rCtr){box(rCtr.x+0.06,rCtr.y+0.14,Math.max(0.5,rCtr.w-0.12),Math.max(0.35,rCtr.h-0.26),12,PAL.woodL,PAL.wood,PAL.woodD);for(var bi3=0;bi3<Math.min(6,Math.floor(rCtr.w*1.4));bi3++){var bt3=iso(rCtr.x+0.35+bi3*0.62,rCtr.cy,15);R2(bt3[0]-1,bt3[1]-4,3,5,["#7fb069","#c9902e","#b4552d"][bi3%3],OUT);}}
+    var rSto=irect("stools"); if(rSto){for(var st3=0;st3<Math.max(1,Math.floor(rSto.w/0.95));st3++)box(rSto.x+0.2+st3*0.95,rSto.cy-0.17,0.34,0.34,6,PAL.gold,PAL.gold,PAL.goldD);}
+    var rBTab=irect("tables"); if(rBTab){ellip(rBTab.x+0.55,rBTab.y+0.55,0.30,"#fdfaf0",OUT,6);if(rBTab.w>=2)ellip(rBTab.x+rBTab.w-0.55,rBTab.y+0.55,0.30,"#fdfaf0",OUT,6);if(rBTab.h>=2)ellip(rBTab.x+0.55,rBTab.y+rBTab.h-0.55,0.30,"#fdfaf0",OUT,6);if(rBTab.w>=2&&rBTab.h>=2)ellip(rBTab.x+rBTab.w-0.55,rBTab.y+rBTab.h-0.55,0.30,"#fdfaf0",OUT,6);}
+    var rKit=irect("kitchen"); if(rKit){box(rKit.x+0.12,rKit.y+0.12,Math.max(0.35,rKit.w-0.24),Math.max(0.5,rKit.h-0.24),14,"#e8e2d2","#cfc4a4","#b8ae96");}
   }else if(func==="spa"){
-    if(it.sauna)box(x0+0.25,y0+0.25,1.3,1.1,20,PAL.woodL,PAL.wood,PAL.woodD);
-    if(it.tub){ellip(x0+W-0.85,y0+0.85,0.55,"#fdfaf0",OUT,5);ellip(x0+W-0.85,y0+0.85,0.40,PAL.water2,null,6);}
-    if(it.massage){box(cx-0.7,y0+H-1.1,1.4,0.6,7,"#fdfaf0","#e8e2d2","#d8d0be");plant(x0+0.4,y0+H-0.4,0.85);}
+    var rSau=irect("sauna"); if(rSau)box(rSau.x+0.1,rSau.y+0.1,Math.max(0.5,rSau.w-0.2),Math.max(0.5,rSau.h-0.2),20,PAL.woodL,PAL.wood,PAL.woodD);
+    var rTub=irect("tub"); if(rTub){ellip(rTub.cx,rTub.cy,Math.min(rTub.w,rTub.h)*0.42,"#fdfaf0",OUT,5);ellip(rTub.cx,rTub.cy,Math.min(rTub.w,rTub.h)*0.30,PAL.water2,null,6);}
+    var rMas=irect("massage"); if(rMas){box(rMas.x+0.15,rMas.cy-0.3,Math.max(0.6,rMas.w-0.3),0.6,7,"#fdfaf0","#e8e2d2","#d8d0be");plant(rMas.x+0.3,rMas.y+rMas.h-0.25,0.8);}
   }else if(func==="dining"){
-    if(it.buffet){var bw2=Math.min(W-0.6,2.6);box(x0+0.3,y0+0.28,bw2,0.62,10,"#e9dfc2",PAL.woodL,PAL.wood);for(var bi4=0;bi4<3;bi4++){var bp4=iso(x0+0.6+bi4*0.5,y0+0.58,11);EL(bp4[0],bp4[1],3.4,2,"#e8e2d2",OUT);EL(bp4[0],bp4[1]-2,1.1,1.1,PAL.gold);}}
-    if(it.tables){ellip(x0+1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=4)ellip(x0+W-1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(H>=4)ellip(cx,cy+0.4,0.32,"#fdfaf0",OUT,6);}
-    if(it.kitchen)box(x0+W-0.8,y0+0.25,0.6,1.2,14,"#e8e2d2","#cfc4a4","#b8ae96");
+    var rBuf=irect("buffet"); if(rBuf){box(rBuf.x+0.08,rBuf.y+0.16,Math.max(0.5,rBuf.w-0.16),Math.max(0.4,rBuf.h-0.3),10,"#e9dfc2",PAL.woodL,PAL.wood);for(var bi4=0;bi4<Math.max(1,Math.floor(rBuf.w/0.8));bi4++){var bp4=iso(rBuf.x+0.45+bi4*0.8,rBuf.cy,11);EL(bp4[0],bp4[1],3.4,2,"#e8e2d2",OUT);EL(bp4[0],bp4[1]-2,1.1,1.1,PAL.gold);}}
+    var rDTab=irect("tables"); if(rDTab){ellip(rDTab.x+0.55,rDTab.y+0.55,0.30,"#fdfaf0",OUT,6);if(rDTab.w>=2)ellip(rDTab.x+rDTab.w-0.55,rDTab.y+0.55,0.30,"#fdfaf0",OUT,6);if(rDTab.h>=2)ellip(rDTab.x+0.55,rDTab.y+rDTab.h-0.55,0.30,"#fdfaf0",OUT,6);if(rDTab.w>=2&&rDTab.h>=2)ellip(rDTab.x+rDTab.w-0.55,rDTab.y+rDTab.h-0.55,0.30,"#fdfaf0",OUT,6);}
+    var rDKit=irect("kitchen"); if(rDKit)box(rDKit.x+0.12,rDKit.y+0.12,Math.max(0.35,rDKit.w-0.24),Math.max(0.5,rDKit.h-0.24),14,"#e8e2d2","#cfc4a4","#b8ae96");
   }else if(func==="meeting"){
-    if(it.table){var tw3=Math.min(W-1.2,3.2),td3=Math.min(H-1.0,1.1);box(cx-tw3/2,cy-td3/2,tw3,td3,8,PAL.woodL,PAL.wood,PAL.woodD);}
-    if(it.screen)P([iso(x0+0.5,y0,30),iso(x0+W-0.5,y0,30),iso(x0+W-0.5,y0,17),iso(x0+0.5,y0,17)],"#e8f4f4",PAL.goldD);
-    if(it.coffee)box(x0+W-0.75,y0+H-0.8,0.5,0.5,9,"#3a3a3a","#2b2b2b","#1f1f1f");
+    var rMTab=irect("table"); if(rMTab){box(rMTab.x+0.15,rMTab.y+0.15,Math.max(0.6,rMTab.w-0.3),Math.max(0.5,rMTab.h-0.3),8,PAL.woodL,PAL.wood,PAL.woodD);}
+    var rScr=irect("screen"); if(rScr)P([iso(rScr.x+0.15,rScr.y,30),iso(rScr.x+rScr.w-0.15,rScr.y,30),iso(rScr.x+rScr.w-0.15,rScr.y,17),iso(rScr.x+0.15,rScr.y,17)],"#e8f4f4",PAL.goldD);
+    var rCof=irect("coffee"); if(rCof)box(rCof.x+0.2,rCof.y+0.2,Math.max(0.3,rCof.w-0.4),Math.max(0.3,rCof.h-0.4),9,"#3a3a3a","#2b2b2b","#1f1f1f");
   }else if(func==="expo"){
-    if(it.booths){var cols2=Math.max(2,Math.floor(W/2)),rows2=Math.max(1,Math.floor(H/2));for(var j2=0;j2<rows2;j2++)for(var i3=0;i3<cols2;i3++){var bx3=x0+0.5+i3*2.0,by3=y0+0.9+j2*1.9;if(bx3+1.3>x0+W-0.2||by3+1.0>y0+H-0.2)continue;box(bx3,by3,1.3,0.95,12,((i3+j2)%2)?PAL.tealM:PAL.gold,((i3+j2)%2)?"#1d6f6a":"#d9a83e",((i3+j2)%2)?"#14524e":PAL.goldD);}}
-    if(it.stage)box(x0+0.3,y0+0.2,Math.min(W-0.6,2.6),0.7,10,"#7a3b4e","#5f2c3d","#4a2230");
-    if(it.banner){var bn2=iso(cx,y0,20);R2(bn2[0]-16,bn2[1]-6,32,9,PAL.gold,PAL.goldD);cxg.fillStyle="#2a1a05";cxg.font="700 6px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("EXPO",bn2[0],bn2[1]+1);}
+    var rBoo=irect("booths"); if(rBoo){var cols2=Math.max(1,Math.floor(rBoo.w/2)),rows2=Math.max(1,Math.floor(rBoo.h/2));for(var j2=0;j2<rows2;j2++)for(var i3=0;i3<cols2;i3++){var bx3=rBoo.x+0.3+i3*2.0,by3=rBoo.y+0.35+j2*1.9;if(bx3+1.3>rBoo.x+rBoo.w-0.1||by3+1.0>rBoo.y+rBoo.h-0.1)continue;box(bx3,by3,1.3,0.95,12,((i3+j2)%2)?PAL.tealM:PAL.gold,((i3+j2)%2)?"#1d6f6a":"#d9a83e",((i3+j2)%2)?"#14524e":PAL.goldD);}}
+    var rSta=irect("stage"); if(rSta)box(rSta.x+0.1,rSta.y+0.12,Math.max(0.5,rSta.w-0.2),Math.max(0.35,rSta.h-0.24),10,"#7a3b4e","#5f2c3d","#4a2230");
+    var rBan=irect("banner"); if(rBan){var bn2=iso(rBan.cx,rBan.y,20);R2(bn2[0]-16,bn2[1]-6,32,9,PAL.gold,PAL.goldD);cxg.fillStyle="#2a1a05";cxg.font="700 6px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("EXPO",bn2[0],bn2[1]+1);}
   }else if(func==="garden"){
-    if(it.plants){plant(x0+0.45,y0+0.5,0.9);plant(x0+W-0.45,y0+H-0.4,0.9);if(W>=4)plant(x0+W-0.45,y0+0.5,0.8);if(H>=4)plant(x0+0.45,y0+H-0.4,0.8);}
-    if(it.paths){tile(Math.floor(cx-0.5),Math.floor(cy-0.5),PAL.stone);tile(Math.floor(cx+0.5),Math.floor(cy-0.5),PAL.stone);tile(Math.floor(cx-0.5),Math.floor(cy+0.5),PAL.stone);}
-    if(it.gazebo){[[-0.8,-0.8],[0.8,-0.8],[0.8,0.8],[-0.8,0.8]].forEach(function(o){box(cx+o[0]-0.09,cy+o[1]-0.09,0.18,0.18,20,PAL.woodL,PAL.wood,PAL.woodD);});var gz2=[iso(cx-0.8,cy-0.8),iso(cx+0.8,cy-0.8),iso(cx+0.8,cy+0.8),iso(cx-0.8,cy+0.8)];P(gz2.map(function(pp){return [pp[0],pp[1]-24];}),PAL.terra,OUT);}
+    var rPla=irect("plants"); if(rPla){plant(rPla.x+0.45,rPla.y+0.5,0.9);plant(rPla.x+rPla.w-0.45,rPla.y+rPla.h-0.4,0.9);if(rPla.w>=3)plant(rPla.x+rPla.w-0.45,rPla.y+0.5,0.8);if(rPla.h>=3)plant(rPla.x+0.45,rPla.y+rPla.h-0.4,0.8);}
+    var rPat=irect("paths"); if(rPat){for(var py2=0;py2<rPat.h;py2++)for(var px2=0;px2<rPat.w;px2++)if((px2+py2)%2===0)tile(Math.floor(rPat.x)+px2,Math.floor(rPat.y)+py2,PAL.stone);}
+    var rGaz=irect("gazebo"); if(rGaz){var gzI=0.35;[[rGaz.x+gzI,rGaz.y+gzI],[rGaz.x+rGaz.w-gzI,rGaz.y+gzI],[rGaz.x+rGaz.w-gzI,rGaz.y+rGaz.h-gzI],[rGaz.x+gzI,rGaz.y+rGaz.h-gzI]].forEach(function(o){box(o[0]-0.09,o[1]-0.09,0.18,0.18,20,PAL.woodL,PAL.wood,PAL.woodD);});var gz2=[iso(rGaz.x+gzI,rGaz.y+gzI),iso(rGaz.x+rGaz.w-gzI,rGaz.y+gzI),iso(rGaz.x+rGaz.w-gzI,rGaz.y+rGaz.h-gzI),iso(rGaz.x+gzI,rGaz.y+rGaz.h-gzI)];P(gz2.map(function(pp){return [pp[0],pp[1]-24];}),PAL.terra,OUT);}
   }else if(func==="parking"){
-    if(it.bays){for(var pb2=0;pb2<W-1;pb2++){var b1=iso(x0+0.4+pb2,y0+0.25),b2=iso(x0+0.4+pb2,y0+1.05);LN(b1[0],b1[1],b2[0],b2[1],"rgba(255,255,255,.65)",1);}var carC=["#c65a3a","#3d6b8a","#e9e4d8"];for(var ci2=0;ci2<Math.min(3,W-1);ci2++){box(x0+0.25+ci2*1.1,y0+0.3,0.95,0.85,7,carC[ci2%3],carC[ci2%3],"rgba(0,0,0,.3)");}}
-    if(it.canopy){var roof2=[iso(x0+0.15,y0+0.15,30),iso(x0+W-0.15,y0+0.15,30),iso(x0+W-0.15,y0+H-0.15,30),iso(x0+0.15,y0+H-0.15,30)];PA(roof2,"#2a7f7f",0.55);P(roof2,null,PAL.tealD,1);}
-    if(it.valet)box(x0+W-1.05,y0+H-0.95,0.8,0.7,13,PAL.woodL,PAL.wood,PAL.woodD);
+    var rBay=irect("bays"); if(rBay){for(var pb2=0;pb2<rBay.w;pb2++){var b1=iso(rBay.x+0.4+pb2,rBay.y+0.2),b2=iso(rBay.x+0.4+pb2,rBay.y+rBay.h-0.2);LN(b1[0],b1[1],b2[0],b2[1],"rgba(255,255,255,.65)",1);}var carC=["#c65a3a","#3d6b8a","#e9e4d8"];for(var ci2=0;ci2<Math.min(3,Math.max(1,rBay.w-1));ci2++){box(rBay.x+0.22+ci2*1.1,rBay.y+0.25,0.95,Math.max(0.5,rBay.h-0.5),7,carC[ci2%3],carC[ci2%3],"rgba(0,0,0,.3)");}}
+    var rCan=irect("canopy"); if(rCan){var roof2=[iso(rCan.x+0.1,rCan.y+0.1,30),iso(rCan.x+rCan.w-0.1,rCan.y+0.1,30),iso(rCan.x+rCan.w-0.1,rCan.y+rCan.h-0.1,30),iso(rCan.x+0.1,rCan.y+rCan.h-0.1,30)];PA(roof2,"#2a7f7f",0.55);P(roof2,null,PAL.tealD,1);}
+    var rVal=irect("valet"); if(rVal)box(rVal.x+0.1,rVal.y+0.1,Math.max(0.4,rVal.w-0.2),Math.max(0.4,rVal.h-0.2),13,PAL.woodL,PAL.wood,PAL.woodD);
   }else if(func==="extras"){
-    if(it.games){for(var sh2=0;sh2<Math.min(3,Math.floor(W-1));sh2++)box(x0+0.25+sh2*1.05,y0+0.15,0.9,0.4,24,PAL.woodL,PAL.wood,PAL.woodD);}
-    if(it.cinema)P([iso(x0+W-2.0,y0,30),iso(x0+W-0.3,y0,30),iso(x0+W-0.3,y0,17),iso(x0+W-2.0,y0,17)],"#3d8fa8",OUT);
-    if(it.kids){box(x0+0.35,y0+H-1.0,0.5,0.5,6,"#e07a5f","#c65a3a","#a8482c");box(x0+0.95,y0+H-1.0,0.5,0.5,6,"#7fb069","#5f9450","#47703c");}
+    var rGam=irect("games"); if(rGam){for(var sh2=0;sh2<Math.max(1,Math.floor(rGam.w/1.05));sh2++)box(rGam.x+0.1+sh2*1.05,rGam.y+0.12,0.9,Math.max(0.3,rGam.h-0.24),24,PAL.woodL,PAL.wood,PAL.woodD);}
+    var rCin=irect("cinema"); if(rCin)P([iso(rCin.x+0.15,rCin.y,30),iso(rCin.x+rCin.w-0.15,rCin.y,30),iso(rCin.x+rCin.w-0.15,rCin.y,17),iso(rCin.x+0.15,rCin.y,17)],"#3d8fa8",OUT);
+    var rKid=irect("kids"); if(rKid){box(rKid.x+0.15,rKid.cy-0.25,0.5,0.5,6,"#e07a5f","#c65a3a","#a8482c");if(rKid.w>=2)box(rKid.x+rKid.w-0.65,rKid.cy-0.25,0.5,0.5,6,"#7fb069","#5f9450","#47703c");}
   }
   /* front walls last, over the inside, with a door gap on the south */
   wallY(x0+W,y0,H,13,PAL.tealM);
@@ -4312,6 +4685,20 @@ function drawAreaSpot(a){
     cxg.fillStyle="#ffb0a0";cxg.font="700 8px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("NO PATH",anp[0],anp[1]-9);
   }
   hitRegions.push({poly:[iso(x0,y0,28),iso(x0+W,y0,28),iso(x0+W,y0+H),iso(x0,y0+H)],fn:(function(id){return function(){selectArea(id);};})(a.id)});
+  /* Pieces are tappable in their own right — this is how you pick
+     WHAT to move: tap the pool itself and you get the pool's menu
+     (move just the pool, upgrade it); tap the area's floor and you
+     get the whole area. These regions are pushed AFTER the area's,
+     and the tap test runs last-pushed-first, so a piece wins over
+     its own area wherever the two overlap. */
+  var selIt=(G.selected&&G.selected.kind==="areaItem"&&G.selected.areaId===a.id)?G.selected.key:null;
+  Object.keys(it).forEach(function(k){
+    var rr=irect(k); if(!rr)return;
+    if(selIt===k){
+      P([iso(rr.x-0.07,rr.y-0.07),iso(rr.x+rr.w+0.07,rr.y-0.07),iso(rr.x+rr.w+0.07,rr.y+rr.h+0.07),iso(rr.x-0.07,rr.y+rr.h+0.07)],null,PAL.gold,2);
+    }
+    hitRegions.push({poly:[iso(rr.x,rr.y,26),iso(rr.x+rr.w,rr.y,26),iso(rr.x+rr.w,rr.y+rr.h),iso(rr.x,rr.y+rr.h)],fn:(function(id,kk){return function(){selectAreaItem(id,kk);};})(a.id,k)});
+  });
 }
 
 /* ---------- Stairwell / elevator shaft (drawn on every floor) ----------
@@ -4415,24 +4802,13 @@ function drawStoreyBelow(f){
    appear here only when the player places them on THIS floor's grid.
    Stair/elevator shafts are drawn at their Floor-1 spot on every
    floor, because the shaft runs all the way up. */
-function drawUpperFloor(){
-  var F=G.curFloor;
-  OX=Math.round(CVW/2-(GRID_W-GRID_H)*8);
-  OY=56+Math.max(0,Math.round((CVH-((GRID_W+GRID_H)*8+150))/2));
-  var c=cxg;c.fillStyle="#0a2027";c.fillRect(0,0,CVW,CVH);
+/* An upper floor's transparent slab: the outline plus every tile
+   of THIS floor's grid. Drawn into the cached layer (see
+   staticLayersFor) — the floor below and the hallway half-walls
+   are their own layers, because hallway placement fades them but
+   not the slab. */
+function drawUpperSlab(F){
   var gx,gy;
-  hitRegions.push({poly:[iso(0,0),iso(GRID_W,0),iso(GRID_W,GRID_H),iso(0,GRID_H)],fn:function(){handleGroundTap();}});
-  /* the floor below, at full height, one storey down */
-  /* Placing hallways on an upper floor fades ALL things too — the
-     full-height floor below included (see drawGroundGrid). */
-  var hallFadeF=(PLACE&&PLACE.kind==="hall");
-  var keepOY=OY; OY=keepOY+64;
-  if(hallFadeF)cxg.globalAlpha=0.5;
-  drawStoreyBelow(F-1);
-  if(hallFadeF)cxg.globalAlpha=1;
-  OY=keepOY;
-  /* this floor's slab: a TRANSPARENT grid — you can see the floor
-     below through the tiles you haven't built on */
   var gc=[iso(-0.6,-0.6),iso(GRID_W+0.6,-0.6),iso(GRID_W+0.6,GRID_H+0.6),iso(-0.6,GRID_H+0.6)];
   PA(gc,"#bfeff2",0.08);
   P(gc,null,PAL.gold,1);
@@ -4450,10 +4826,31 @@ function drawUpperFloor(){
     PA([iso(gx,gy),iso(gx+1,gy),iso(gx+1,gy+1),iso(gx,gy+1)],"#fff6d6",0.13);
     P([iso(gx,gy),iso(gx+1,gy),iso(gx+1,gy+1),iso(gx,gy+1)],null,"rgba(233,180,76,.38)");
   }
-  /* hallway half-walls on this floor too, same as the rooms get */
-  if(hallFadeF)cxg.globalAlpha=0.5;
-  drawHallWalls(F);
-  if(hallFadeF)cxg.globalAlpha=1;
+}
+function drawUpperFloor(){
+  var F=G.curFloor;
+  OX=Math.round(CVW/2-(GRID_W-GRID_H)*8);
+  OY=56+Math.max(0,Math.round((CVH-((GRID_W+GRID_H)*8+150))/2));
+  var c=cxg;c.fillStyle="#0a2027";c.fillRect(0,0,CVW,CVH);
+  hitRegions.push({poly:[iso(0,0),iso(GRID_W,0),iso(GRID_W,GRID_H),iso(0,GRID_H)],fn:function(){handleGroundTap();}});
+  /* The static parts of an upper floor — the full-height floor
+     below, this floor's transparent slab, and its hallway
+     half-walls — come from the cached layers (see drawGroundGrid):
+     they only change with the layout. Placing hallways on an upper
+     floor fades ALL things too — the full-height floor below
+     included — so the below and walls layers are blitted at 50%
+     while the slab stays at full strength, exactly as the old
+     per-render drawing did. */
+  var hallFadeF=(PLACE&&PLACE.kind==="hall");
+  var keepOY=OY;
+  var layersF=staticLayersFor("g"+F+"|"+layoutSignature()+"|"+CVW+"x"+CVH+"x"+RS+"|"+(tileImg("carpet")?1:0),{
+    below:function(){OY=keepOY+64;drawStoreyBelow(F-1);OY=keepOY;},
+    slab:function(){drawUpperSlab(F);},
+    walls:function(){drawHallWalls(F);}
+  });
+  blitLayer(layersF.below,hallFadeF?0.5:null);
+  blitLayer(layersF.slab);
+  blitLayer(layersF.walls,hallFadeF?0.5:null);
   /* the shafts, rooms and placed amenities on THIS floor in ONE
      back-to-front pass (see depthKey) — the shafts used to be
      painted before every room, so a room behind a shaft painted
@@ -4783,7 +5180,7 @@ function buildStaff(){
     });
   }
 }
-function spawnStaffFigures(){buildStaff();}
+function spawnStaffFigures(){buildStaff();if(typeof _perfCache!=="undefined"&&_perfCache)_pc().peopleSig=peopleSignature();}
 /* ---------- Room occupants: the walker IS the occupant ----------
    Where a guest stands inside their room (tile coords). The walker's
    final waypoint is this same point, so the handoff is seamless:
@@ -5020,6 +5417,7 @@ function selectRoom(id){G.selectedRoomId=id;G.selected={kind:"room",id:id};close
 function selectLobby(){G.selectedRoomId=null;G.selected={kind:"lobby"};closeDrawer();refreshSelInfo();renderStage();if(G.lobbyGx!=null)scheduleCenterOn(G.lobbyGx+lobbyW()/2,G.lobbyGy+lobbyH()/2);}
 function selectDining(){G.selectedRoomId=null;G.selected={kind:"dining"};closeDrawer();refreshSelInfo();renderStage();if(G.diningGx!=null)scheduleCenterOn(G.diningGx+diningW()/2,G.diningGy+diningH()/2);}
 function selectArea(id){G.selectedRoomId=null;G.selected={kind:"area",id:id};closeDrawer();refreshSelInfo();renderStage();var a=areaById(id);if(a)scheduleCenterOn(a.gx+a.w/2,a.gy+a.h/2);}
+function selectAreaItem(areaId,key){G.selectedRoomId=null;G.selected={kind:"areaItem",areaId:areaId,key:key};closeDrawer();refreshSelInfo();renderStage();var a=areaById(areaId);var r=a?areaItemRect(a,key):null;if(r)scheduleCenterOn(r.gx+r.w/2,r.gy+r.h/2);}
 function selectAmenity(key){G.selectedRoomId=null;G.selected={kind:"amenity",key:key};closeDrawer();refreshSelInfo();renderStage();var sp=(G.amenitySpots||{})[key];if(sp)scheduleCenterOn(sp.gx+sp.w/2,sp.gy+sp.h/2);}
 function selectVertical(gx,gy){G.selectedRoomId=null;G.selected={kind:"vertical",gx:gx,gy:gy};closeDrawer();refreshSelInfo();renderStage();scheduleCenterOn(gx+1,gy+1);}
 function selectHall(gx,gy,floor){G.selectedRoomId=null;G.selected={kind:"hall",gx:gx,gy:gy,floor:floor};closeDrawer();refreshSelInfo();renderStage();scheduleCenterOn(gx+0.5,gy+0.5);}
@@ -5101,6 +5499,9 @@ function startMoveSelected(){
   }else if(sel.kind==="area"){
     var a2=areaById(sel.id); if(!a2)return;
     startMove({moveKind:"area",areaId:a2.id,label:areaTitle(a2),w:a2.w,h:a2.h,rot:0,floor:a2.floor,fromGx:a2.gx,fromGy:a2.gy});
+  }else if(sel.kind==="areaItem"){
+    var a4=areaById(sel.areaId); if(!a4)return;
+    startMoveAreaItem(a4,sel.key);
   }else{toast("Hallway tiles can't be moved — remove this tile and lay a new one from Build.");}
 }
 /* ---------- Live menu refresh ----------
@@ -5145,6 +5546,7 @@ function selSignature(){
       (modifyArm.key==="amenity:"+sel.key&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
   }
   if(sel.kind==="area"){var a=areaById(sel.id);if(!a)return "area:gone:"+sel.id;return ["area",a.id,a.func||"",JSON.stringify(a.items||{}),a.w,a.h,a.gx,a.gy,a.floor,areaReachable(a)?1:0,(modifyArm.key==="area:"+a.id&&Date.now()-modifyArm.at<=8000)?1:0].join("|");}
+  if(sel.kind==="areaItem"){var ai=areaById(sel.areaId);if(!ai)return "areaitem:gone:"+sel.areaId;var ii=(ai.items||{})[sel.key];return ["areaitem",sel.areaId,sel.key,JSON.stringify(ii||null),ai.gx,ai.gy,ai.w,ai.h,ai.floor,(modifyArm.key==="areaitem:"+sel.areaId+":"+sel.key&&Date.now()-modifyArm.at<=8000)?1:0].join("|");}
   if(sel.kind==="hall")return ["hall",sel.floor,sel.gx,sel.gy,hasHall(sel.floor,sel.gx,sel.gy)?1:0,
     (modifyArm.key==="hall:"+sel.floor+","+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
   return sel.kind;
@@ -5307,6 +5709,29 @@ function refreshSelInfo(){
     bind.push(["selMove",function(){startMoveSelected();}]);
     bind.push(["selRemove",function(){removeSelected();}]);
     var ua=document.getElementById("selUpAmen"); if(ua)ua.addEventListener("click",function(){buyAmenity(key);refreshSelInfo();});
+  }else if(sel.kind==="areaItem"){
+    var a=areaById(sel.areaId),key=sel.key;
+    var it=(a&&a.items&&a.items[key])||null,def=(a&&a.func)?areaItemDef(a.func,key):null;
+    if(!a||!def||!it||typeof it!=="object"){ /* the piece is gone — fall back to its area, or close */
+      if(a){G.selected={kind:"area",id:a.id};refreshSelInfo();renderStage();}else{boxEl.style.display="none";G.selected=null;}
+      return;
+    }
+    armedHere=(modifyArm.key==="areaitem:"+a.id+":"+key&&Date.now()-modifyArm.at<=8000);
+    var ld=areaItemLvDef(def,it.lv||0);
+    var nxL=def.levels?def.levels[(it.lv||0)+1]:null;
+    h="<b>"+def.name+(def.levels?" · "+ld.name:"")+"</b> — a piece inside the "+areaTitle(a)+" · Floor "+a.floor+
+      "<br>"+(it.w||1)+"×"+(it.h||1)+" tiles · Appeal +"+ld.appeal+(ld.upkeep?" · upkeep "+money(ld.upkeep)+"/mo":"")+" · it can be moved anywhere inside its area, but never out of it"+
+      '<div class="modBtns">'+
+      btn("selMoveItem","↔ Move this piece","primary")+
+      (nxL?btn("selUpItem","Upgrade: "+nxL.name+" "+nxL.w+"×"+nxL.h+" — "+money(nxL.cost)):"")+
+      btn("selAreaMenu","Whole area…")+
+      btn("selRemoveItem",armedHere?"Confirm remove — $0 back":"Remove — $0 back","danger")+
+      btn("selClose","Close")+"</div>";
+    boxEl.innerHTML=h;boxEl.style.display="block";
+    bind.push(["selMoveItem",function(){startMoveSelected();}]);
+    var uix=document.getElementById("selUpItem"); if(uix)uix.addEventListener("click",function(){upgradeAreaItem(a,key);});
+    var amx=document.getElementById("selAreaMenu"); if(amx)amx.addEventListener("click",function(){selectArea(a.id);});
+    var rix=document.getElementById("selRemoveItem"); if(rix)rix.addEventListener("click",function(){removeAreaItem(a,key);});
   }else if(sel.kind==="area"){
     var a=areaById(sel.id);
     if(!a){boxEl.style.display="none";G.selected=null;return;}
@@ -5326,20 +5751,28 @@ function refreshSelInfo(){
       if(defs.length){
         h+='<div class="modBtns">';
         defs.forEach(function(d){
-          if(ait[d.key])h+='<span class="pill good">'+d.name+' ✓</span>';
-          else h+='<button data-aitem="'+d.key+'">'+d.name+' — '+money(d.cost)+(d.upkeep?" · "+money(d.upkeep)+"/mo":"")+(d.req?" (required)":"")+'</button>';
+          var itx=ait[d.key];
+          if(itx&&typeof itx==="object"){
+            var ld2=areaItemLvDef(d,itx.lv||0);
+            h+='<span class="pill good">'+d.name+(d.levels?' · '+ld2.name:'')+' · '+(itx.w||1)+'×'+(itx.h||1)+' ✓</span><button data-amove="'+d.key+'">↔ Move</button>';
+            if(d.levels){var nx2=d.levels[(itx.lv||0)+1];if(nx2)h+='<button data-aup="'+d.key+'" class="primary">Upgrade: '+nx2.name+' '+nx2.w+'×'+nx2.h+' — '+money(nx2.cost)+'</button>';else h+='<span class="pill">Top size</span>';}
+          }
+          else if(itx)h+='<span class="pill good">'+d.name+' ✓</span>';
+          else{var ld0=areaItemLvDef(d,0);h+='<button data-aitem="'+d.key+'">'+d.name+(d.levels?' ('+ld0.name+' '+ld0.w+'×'+ld0.h+')':'')+' — '+money(ld0.cost)+(ld0.upkeep?" · "+money(ld0.upkeep)+"/mo":"")+(d.req?" (required)":"")+'</button>';}
         });
-        h+='</div>';
+        h+='</div><div class="sub">Pieces sit inside this area at the spot you place them. To move one piece, tap the piece itself in the scene — or its ↔ Move button here. A piece can move anywhere inside this area, never out of it.</div>';
       }
     }
     h+='<div class="modBtns"><span class="pill">Expand — $300/tile</span><button id="selExpN">↑ North '+money(a.w*AREA_TILE_COST)+'</button><button id="selExpE">→ East '+money(a.h*AREA_TILE_COST)+'</button><button id="selExpS">↓ South '+money(a.w*AREA_TILE_COST)+'</button><button id="selExpW">← West '+money(a.h*AREA_TILE_COST)+'</button></div>';
-    h+='<div class="modBtns">'+btn("selMove","↔ Move")+btn("selRemoveA",armedHere?"Confirm remove — $0 back":"Remove — $0 back","danger")+btn("selClose","Close")+"</div>";
+    h+='<div class="modBtns">'+btn("selMove","↔ Move whole area")+btn("selRemoveA",armedHere?"Confirm remove — $0 back":"Remove — $0 back","danger")+btn("selClose","Close")+"</div>";
     boxEl.innerHTML=h;boxEl.style.display="block";
     bind.push(["selMove",function(){startMoveSelected();}]);
     var rma=document.getElementById("selRemoveA"); if(rma)rma.addEventListener("click",function(){removeArea(a);});
     [["selExpN","N"],["selExpE","E"],["selExpS","S"],["selExpW","W"]].forEach(function(eb){var eel=document.getElementById(eb[0]);if(eel)eel.addEventListener("click",function(){expandArea(a,eb[1]);});});
     Array.prototype.forEach.call(boxEl.querySelectorAll("[data-adesig]"),function(x){x.addEventListener("click",function(){designateArea(a,x.getAttribute("data-adesig"));});});
     Array.prototype.forEach.call(boxEl.querySelectorAll("[data-aitem]"),function(x){x.addEventListener("click",function(){buyAreaItem(a,x.getAttribute("data-aitem"));});});
+    Array.prototype.forEach.call(boxEl.querySelectorAll("[data-amove]"),function(x){x.addEventListener("click",function(){startMoveAreaItem(a,x.getAttribute("data-amove"));});});
+    Array.prototype.forEach.call(boxEl.querySelectorAll("[data-aup]"),function(x){x.addEventListener("click",function(){upgradeAreaItem(a,x.getAttribute("data-aup"));});});
   }else if(sel.kind==="hall"){
     armedHere=(modifyArm.key==="hall:"+sel.floor+","+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000);
     h="<b>Hallway tile</b> — Floor "+sel.floor+" · "+sel.gx+","+sel.gy+
