@@ -279,10 +279,26 @@ var ROOM_TYPES={
   deluxe:  {name:"Deluxe King",    sleeps:2, cost:2600, appeal:24, defPrice:110,w:7, h:7},
   suite:   {name:"Suite",          sleeps:3, cost:5500, appeal:38, defPrice:180,w:9, h:7},
   grand:   {name:"Grand Suite",    sleeps:4, cost:11000,appeal:55, defPrice:300,w:9, h:9},
-  penthouse:{name:"Penthouse",     sleeps:4, cost:28000,appeal:85, defPrice:550,w:11, h:9}
+  penthouse:{name:"Penthouse",     sleeps:4, cost:28000,appeal:85, defPrice:550,w:11, h:9},
+  /* Legacy only: rooms designated as Guest Rooms from a sizeable
+     area in the previous build. No new custom rooms can be built —
+     guest rooms are ALWAYS the fixed size of their tier (below).
+     This entry stays so an old save's custom rooms still load,
+     price and render; every tier room ignores any stored size
+     override and uses its tier's fixed footprint. */
+  custom:  {name:"Custom Guest Room",sleeps:2, cost:0,   appeal:10, defPrice:45, w:5, h:3}
 };
-function roomW(r){return (r&&ROOM_TYPES[r.type]&&ROOM_TYPES[r.type].w)||4;}
-function roomH(r){return (r&&ROOM_TYPES[r.type]&&ROOM_TYPES[r.type].h)||4;}
+/* Guest rooms are FIXED SIZE BY TIER: a room's footprint, sleeps
+   and base appeal come from ROOM_TYPES and nothing else — rooms
+   are never built, placed or expanded at a player-chosen size.
+   (Only a legacy "custom" room from an old save keeps the size it
+   was built at; it cannot be resized either.) The sizeable
+   $300/tile area system below is for EVERYTHING ELSE — lobby,
+   pool, gym, bar, spa, dining, meeting, expo, garden, parking,
+   extras — never for guest rooms. */
+function roomW(r){return (r&&r.type==="custom"&&r.cw)||(r&&ROOM_TYPES[r.type]&&ROOM_TYPES[r.type].w)||4;}
+function roomH(r){return (r&&r.type==="custom"&&r.ch)||(r&&ROOM_TYPES[r.type]&&ROOM_TYPES[r.type].h)||4;}
+function roomSleeps(r){return (r&&r.type==="custom"&&r.csleeps)||(r&&ROOM_TYPES[r.type]&&ROOM_TYPES[r.type].sleeps)||1;}
 function typeW(key){return (ROOM_TYPES[key]&&ROOM_TYPES[key].w)||4;}
 function typeH(key){return (ROOM_TYPES[key]&&ROOM_TYPES[key].h)||4;}
 /* Interior upgrade tracks. Each level is [name, cost, appeal, minArea]:
@@ -352,6 +368,146 @@ function amenitySize(key,tier){
   var s=AMENITY_SIZES[key]; if(!s||tier<1)return [3,3];
   return s[Math.min(tier,s.length)-1];
 }
+/* ================= AREAS — build a shell, designate its job =================
+   The sizeable building mechanic — for EVERYTHING EXCEPT guest
+   rooms. You no longer buy a finished pool / gym / lobby off a
+   list: you build an empty AREA (a shell) at $300 per tile, in a
+   size YOU define in the Build menu, place it like any other
+   footprint, and then TAP it to designate what it is — Lobby,
+   Pool Room, Gym, Bar, Spa, Dining, Meeting, Expo, Garden,
+   Parking or Extras — and to build the things that go INSIDE it.
+   An area only counts as its function once its required piece is
+   built: a Lobby needs its Lobby Desk (the bare minimum for a
+   functional lobby), a Pool Room needs the Pool itself, and so
+   on. A placed area expands one tile-row or tile-column at a
+   time in any direction (N / E / S / W) at $300 per added tile.
+   GUEST ROOMS ARE NOT AREAS: a guest room is always built from
+   the Rooms list at the FIXED size of its tier (Single 3×3 …
+   Penthouse 11×9) for the tier's fixed price, placed at that
+   size, and never resized or expanded. */
+var AREA_TILE_COST=300;
+var AREA_BUILD_W=4,AREA_BUILD_H=3;
+var AREA_FUNCS={
+  lobby:{name:"Lobby",preset:[4,3]},
+  pool:{name:"Pool Room",preset:[6,4]},
+  gym:{name:"Gym / Exercise",preset:[4,3]},
+  bar:{name:"Bar & Restaurant",preset:[5,3]},
+  spa:{name:"Spa",preset:[4,3]},
+  dining:{name:"Breakfast / Dining",preset:[4,3]},
+  meeting:{name:"Meeting Room",preset:[4,3]},
+  expo:{name:"Expo / Event Hall",preset:[6,4]},
+  garden:{name:"Gardens & Grounds",preset:[5,4]},
+  parking:{name:"Parking",preset:[5,3]},
+  extras:{name:"Extras — Games / Library / Kids",preset:[4,3]}
+  /* No "guest" function on purpose: guest rooms keep the normal
+     fixed-size-by-tier strategy and are built from the Rooms list,
+     never designated from a sizeable area. */
+};
+/* Interior pieces per function: cost is one-off, upkeep is monthly,
+   appeal counts toward the hotel once installed. req = the piece
+   without which the area is not yet its function. */
+var AREA_ITEMS={
+  lobby:[
+    {key:"desk",name:"Lobby Desk",cost:500,upkeep:0,appeal:8,req:true,desc:"The bare minimum — without a desk this is not a functional lobby"},
+    {key:"fountain",name:"Fountain",cost:1500,upkeep:30,appeal:8,desc:"A fountain in the lobby — also counts toward the fountain some guests ask for"},
+    {key:"couches",name:"Couches",cost:400,upkeep:0,appeal:4,desc:"Seating for waiting guests"},
+    {key:"tables",name:"Tables",cost:300,upkeep:0,appeal:3,desc:"Coffee tables beside the couches"},
+    {key:"wifi",name:"Wi-Fi",cost:250,upkeep:40,appeal:3,desc:"Switches on hotel Wi-Fi for the whole hotel — $40/mo"}
+  ],
+  pool:[
+    {key:"pool",name:"Pool",cost:3000,upkeep:60,appeal:14,req:true,desc:"The pool itself — without it this is not a pool room"},
+    {key:"slide",name:"Water Slide",cost:1800,upkeep:20,appeal:8,needs:"pool",desc:"Needs the Pool"},
+    {key:"ladder",name:"Pool Ladder",cost:250,upkeep:0,appeal:2,needs:"pool",desc:"Needs the Pool"},
+    {key:"shower",name:"Pool Shower",cost:600,upkeep:10,appeal:3,desc:"Rinse-off shower by the pool"},
+    {key:"bathroom",name:"Pool Bathroom",cost:900,upkeep:15,appeal:4,desc:"Changing / WC stall for swimmers"}
+  ],
+  gym:[
+    {key:"treadmills",name:"Treadmills & Bikes",cost:1200,upkeep:30,appeal:8,req:true,desc:"The exercise kit itself — without it this is not a gym"},
+    {key:"weights",name:"Weight Rack",cost:800,upkeep:10,appeal:5},
+    {key:"mats",name:"Class Mats & Mirrors",cost:900,upkeep:10,appeal:5,desc:"Group classes space"}
+  ],
+  bar:[
+    {key:"counter",name:"Bar Counter",cost:2000,upkeep:50,appeal:10,req:true,desc:"The bar itself — without it this is not a bar"},
+    {key:"stools",name:"Bar Stools",cost:350,upkeep:0,appeal:3},
+    {key:"tables",name:"Restaurant Tables",cost:600,upkeep:10,appeal:5},
+    {key:"kitchen",name:"Kitchen Pass",cost:2500,upkeep:60,appeal:8,desc:"Hot food from the bar kitchen"}
+  ],
+  spa:[
+    {key:"sauna",name:"Sauna",cost:6000,upkeep:120,appeal:20,req:true,desc:"The sauna itself — without it this is not a spa"},
+    {key:"tub",name:"Soaking Tub",cost:2500,upkeep:60,appeal:10},
+    {key:"massage",name:"Treatment Room",cost:4000,upkeep:80,appeal:12}
+  ],
+  dining:[
+    {key:"buffet",name:"Buffet Counter",cost:900,upkeep:25,appeal:8,req:true,desc:"Where breakfast is served from"},
+    {key:"tables",name:"Dining Tables",cost:500,upkeep:10,appeal:5},
+    {key:"kitchen",name:"Kitchen",cost:2800,upkeep:60,appeal:10,desc:"Cooked dishes, not just cold trays"}
+  ],
+  meeting:[
+    {key:"table",name:"Board Table & Chairs",cost:2000,upkeep:40,appeal:6,req:true,desc:"The meeting setup itself"},
+    {key:"screen",name:"Projector & Screen",cost:1500,upkeep:20,appeal:5},
+    {key:"coffee",name:"Coffee Station",cost:600,upkeep:15,appeal:3}
+  ],
+  expo:[
+    {key:"booths",name:"Expo Booths",cost:6000,upkeep:300,appeal:18,req:true,desc:"The booth grid itself — without it this is not an expo hall"},
+    {key:"stage",name:"Stage & Lighting",cost:5000,upkeep:200,appeal:12},
+    {key:"banner",name:"Entrance Banner",cost:1200,upkeep:50,appeal:5}
+  ],
+  garden:[
+    {key:"plants",name:"Planters & Plants",cost:600,upkeep:20,appeal:4,req:true,desc:"The planting itself"},
+    {key:"paths",name:"Garden Paths",cost:900,upkeep:10,appeal:5},
+    {key:"gazebo",name:"Gazebo",cost:3500,upkeep:80,appeal:12}
+  ],
+  parking:[
+    {key:"bays",name:"Marked Bays",cost:2500,upkeep:40,appeal:6,req:true,desc:"The parking bays themselves"},
+    {key:"canopy",name:"Covered Canopy",cost:4000,upkeep:70,appeal:6},
+    {key:"valet",name:"Valet Booth",cost:3000,upkeep:100,appeal:6}
+  ],
+  extras:[
+    {key:"games",name:"Games Shelves",cost:2200,upkeep:50,appeal:6,req:true,desc:"The games / library itself"},
+    {key:"cinema",name:"Cinema Screen",cost:4000,upkeep:90,appeal:10},
+    {key:"kids",name:"Kids Play Corner",cost:2500,upkeep:60,appeal:8}
+  ]
+};
+function areasList(){return (G&&G.areas)||[];}
+function areaById(id){var l=areasList();for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null;}
+function areaAtCellF(floor,gx,gy){var l=areasList();for(var i=0;i<l.length;i++){var a=l[i];if(a.floor!==floor)continue;if(gx>=a.gx&&gx<a.gx+a.w&&gy>=a.gy&&gy<a.gy+a.h)return a;}return null;}
+function areaItemDef(func,key){var l=AREA_ITEMS[func]||[];for(var i=0;i<l.length;i++)if(l[i].key===key)return l[i];return null;}
+function areaReqKey(func){var l=AREA_ITEMS[func]||[];for(var i=0;i<l.length;i++)if(l[i].req)return l[i].key;return null;}
+function areaFunctional(a){if(!a||!a.func)return false;var rk=areaReqKey(a.func);return !rk||!!(a.items&&a.items[rk]);}
+function areaAppeal(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=l[i].appeal;return s;}
+function areaUpkeep(a){if(!a||!a.func)return 0;var s=0,l=AREA_ITEMS[a.func]||[];for(var i=0;i<l.length;i++)if(a.items&&a.items[l[i].key])s+=l[i].upkeep;return s;}
+function areaTitle(a){return a&&a.func?AREA_FUNCS[a.func].name+" area":"Undesignated area";}
+/* An area only COUNTS when it is functional AND reachable from the
+   lobby (see areaReachable): an unconnected pool / gym / spa gives
+   the hotel nothing at all. */
+function hasAreaFunc(func){return areasList().some(function(a){return a.func===func&&areaFunctional(a)&&areaReachable(a);});}
+function hasHotelWifi(){return areasList().some(function(a){return a.func==="lobby"&&a.items&&a.items.wifi&&areaReachable(a);});}
+function functionalLobbyAreas(){return areasList().filter(function(a){return a.floor===1&&a.func==="lobby"&&areaFunctional(a);});}
+function hasFunctionalLobby(){return functionalLobbyAreas().length>0;}
+function hasAnyLobby(){return !!((G.lobby>0&&G.lobbyGx!=null)||hasFunctionalLobby());}
+function isFunctionalLobbyTile(gx,gy){var a=areaAtCellF(1,gx,gy);return !!a&&a.func==="lobby"&&areaFunctional(a);}
+function isAreaWalkTile(gx,gy){var a=areaAtCellF(1,gx,gy);return !!a&&(a.func==="lobby"||a.func==="dining"||a.func==="bar");}
+function primaryLobbyRect(){
+  if(G.lobby>0&&G.lobbyGx!=null)return {gx:G.lobbyGx,gy:G.lobbyGy,w:lobbyW(),h:lobbyH(),rot:G.lobbyRot||2};
+  var fl=functionalLobbyAreas()[0];
+  if(fl)return {gx:fl.gx,gy:fl.gy,w:fl.w,h:fl.h,rot:fl.rot||2};
+  return null;
+}
+/* Can an area footprint sit at (gx,gy,w,h) on this floor? Grass and
+   hallway tiles are fine (hallways under a growth edge are paved
+   over, exactly like the lobby container); rooms, shafts, the
+   legacy containers, placed amenities and other areas block it. */
+function areaRectFree(gx,gy,w,h,floor,ignoreId){
+  for(var y=gy;y<gy+h;y++)for(var x=gx;x<gx+w;x++){
+    if(!inGrid(x,y))return false;
+    if(roomAtCellF(floor,x,y)||verticalAt(x,y))return false;
+    if(floor===1&&(isLobbyTile(x,y)||isDiningTile(x,y)))return false;
+    if(amenityAtCellF(floor,x,y))return false;
+    var oa=areaAtCellF(floor,x,y); if(oa&&oa.id!==ignoreId)return false;
+  }
+  return true;
+}
+
 var STAFF_ROLES={
   housekeeper:{name:"Housekeeper",wage:900,desc:"Walks the hallways to each dirty room and cleans it — two seconds a room, nearest first."},
   handyman:{name:"Handyman",wage:1250,desc:"Repairs minor & major faults, refurbishes worn rooms."},
@@ -411,7 +567,7 @@ function freshState(){
     priceByType:{standard:45},fees:{pool:8,parking:10},
     ledger:[],today:null,feed:[],satis:[],turnTotal:0,
     selectedRoomId:null,curFloor:1,view:"floor",tab:"build",
-    spawnT:2.5,gardenNeglect:0,hallTiles:{},verticals:[],landExp:0,amenitySpots:{},
+    spawnT:2.5,gardenNeglect:0,hallTiles:{},verticals:[],landExp:0,amenitySpots:{},areas:[],nextAreaId:1,
     lobbyGx:null,lobbyGy:null,lobbyRot:2,lobbyW:null,lobbyH:null,
     diningGx:null,diningGy:null,diningW:4,diningH:3,diningRot:2};
   Object.keys(AMENITIES).forEach(function(k){G.amenities[k]=0;});
@@ -485,7 +641,7 @@ function readSave(){
 function applySave(data){
   var s=data.state;
   freshState(); /* start from current defaults, then overlay the save — new fields keep their defaults */
-  var keys=["cash","unlimitedCash","day","dayT","speed","floors","lobby","breakfast","breakfastMode","priceByType","fees","ledger","today","feed","satis","turnTotal","curFloor","spawnT","gardenNeglect","hallTiles","verticals","landExp","amenitySpots","lobbyGx","lobbyGy","lobbyRot","lobbyW","lobbyH","diningGx","diningGy","diningW","diningH","diningRot","nextRoomId"];
+  var keys=["cash","unlimitedCash","day","dayT","speed","floors","lobby","breakfast","breakfastMode","priceByType","fees","ledger","today","feed","satis","turnTotal","curFloor","spawnT","gardenNeglect","hallTiles","verticals","landExp","amenitySpots","lobbyGx","lobbyGy","lobbyRot","lobbyW","lobbyH","diningGx","diningGy","diningW","diningH","diningRot","nextRoomId","areas","nextAreaId"];
   keys.forEach(function(k){if(s[k]!==undefined)G[k]=s[k];});
   /* Merge dictionaries so a save from an older build can't drop a newer amenity / staff role. */
   Object.keys(AMENITIES).forEach(function(k){G.amenities[k]=(s.amenities&&typeof s.amenities[k]==="number")?s.amenities[k]:0;});
@@ -498,6 +654,12 @@ function applySave(data){
       for(var i=0;i<ARCHETYPES.length;i++)if(ARCHETYPES[i].key===r.guest.arch.key){r.guest.arch=ARCHETYPES[i];break;}
     }
     if(r&&typeof r.nightsLeft!=="number")r.nightsLeft=(r.state==="occupied"&&r.guest)?(r.guest.stay||1):0;
+    /* Guest rooms are fixed size by tier: strip any stored size /
+       sleeps / appeal override from a tier room so it always uses
+       its tier's footprint. Legacy custom rooms (built from an
+       area in the previous build) keep the size they were built
+       at — they just can't be created or resized any more. */
+    if(r&&r.type!=="custom"){delete r.cw;delete r.ch;delete r.csleeps;delete r.cappeal;}
   });
   if(!G.today||typeof G.today!=="object")G.today=newDayRec();
   if(!Array.isArray(G.ledger))G.ledger=[];
@@ -506,6 +668,13 @@ function applySave(data){
   if(!G.hallTiles||typeof G.hallTiles!=="object")G.hallTiles={};
   if(!Array.isArray(G.verticals))G.verticals=[];
   if(!G.amenitySpots||typeof G.amenitySpots!=="object")G.amenitySpots={};
+  if(!Array.isArray(G.areas))G.areas=[];
+  /* An area saved with a function that is no longer designatable
+     (e.g. "guest" from the previous build — guest rooms are fixed
+     tier rooms now, not areas) comes back undesignated, ready to
+     be given one of the sizeable functions or removed. */
+  G.areas.forEach(function(a){if(a&&a.func&&!AREA_FUNCS[a.func]){a.func=null;a.items={};}});
+  if(typeof G.nextAreaId!=="number")G.nextAreaId=G.areas.length+1;
   if(!G.priceByType||typeof G.priceByType!=="object")G.priceByType={standard:45};
   if(!G.fees||typeof G.fees!=="object")G.fees={pool:8,parking:10};
   /* Saves from before the cash toggle have no unlimitedCash field:
@@ -612,7 +781,9 @@ setInterval(function(){if(G&&G.started)saveGame();},2500);
 
 /* ---------- Derived values ---------- */
 function roomAppeal(r){
-  var a=ROOM_TYPES[r.type].appeal;
+  /* Base appeal is the tier's, fixed like its size — only a legacy
+     custom room keeps the appeal it was built with. */
+  var a=(r.type==="custom"&&r.cappeal!=null?r.cappeal:ROOM_TYPES[r.type].appeal);
   ["bed","bath","tv","furn","finish"].forEach(function(t){a+=TRACKS[t].levels[r[t]][2];});
   if(r.floor>=4)a+=Math.min(6,r.floor-3);
   if(typeof roomIndoors==="function"&&roomIndoors(r))a+=3; /* reached under cover, not across the lawn */
@@ -626,10 +797,14 @@ function hotelAppeal(){
   if(G.lobbyGx!=null&&typeof lobbyW==='function')a+=Math.max(0,Math.round((lobbyW()*lobbyH()-4)/4));
   if(G.diningGx!=null&&G.breakfast>0)a+=Math.max(0,Math.round(((G.diningW||4)*(G.diningH||3)-12)/3));
   Object.keys(AMENITIES).forEach(function(k){
-    var t=G.amenities[k]; if(t>0){var ap=AMENITIES[k].tiers[t][3]; if(k==="garden"&&G.staff.gardener===0)ap=Math.round(ap*(1-G.gardenNeglect*0.5)); a+=ap;}
+    var t=G.amenities[k]; if(t>0&&amenitySpotReachable(k)){var ap=AMENITIES[k].tiers[t][3]; if(k==="garden"&&G.staff.gardener===0)ap=Math.round(ap*(1-G.gardenNeglect*0.5)); a+=ap;}
   });
-  if(G.rooms.length){var s=0;G.rooms.forEach(function(r){s+=roomAppeal(r);});a+=Math.round(s/G.rooms.length*0.5);}
+  /* Only REACHABLE rooms lift the hotel's appeal: once a lobby
+     exists, a room with no path to its door earns the hotel nothing,
+     exactly as it can take no guest. */
+  if(G.rooms.length){var s=0,rn=0;G.rooms.forEach(function(r){if(roomReachable(r)){s+=roomAppeal(r);rn++;}});if(rn)a+=Math.round(s/rn*0.5);}
   (G.verticals||[]).forEach(function(v){a+=(VERTICAL_TYPES[v.kind]?VERTICAL_TYPES[v.kind].appeal:0);});
+  areasList().forEach(function(ar){if(areaReachable(ar))a+=areaAppeal(ar);}); /* designated areas earn appeal from what is built inside them — but only once a path from the lobby reaches them */
   return a;
 }
 /* Internal only: what guests privately judge a room to be worth. Never
@@ -650,6 +825,7 @@ function monthlyCosts(){
   var wages=0;Object.keys(STAFF_ROLES).forEach(function(k){wages+=G.staff[k]*STAFF_ROLES[k].wage;});
   var upkeep=LOBBY_TIERS[G.lobby].upkeep+BREAKFAST_TIERS[G.breakfast].upkeep;
   Object.keys(AMENITIES).forEach(function(k){var t=G.amenities[k];if(t>0)upkeep+=AMENITIES[k].tiers[t][2];});
+  areasList().forEach(function(ar){upkeep+=areaUpkeep(ar);}); /* area interiors with a monthly cost — lobby Wi-Fi, pool, sauna… */
   return {wages:wages,upkeep:upkeep,total:wages+upkeep};
 }
 function arrivalsPerDay(){
@@ -658,21 +834,21 @@ function arrivalsPerDay(){
 }
 function hasAmenityForDesire(d){
   switch(d){
-    case "pool":return G.amenities.pool>0; case "gym":return G.amenities.gym>0;
-    case "spa":return G.amenities.spa>0; case "meeting":return G.amenities.meeting>0;
-    case "expo":return G.amenities.expo>0; case "garden":return G.amenities.garden>0;
-    case "parking":return G.amenities.parking>0; case "fountain":return G.amenities.fountain>0;
+    case "pool":return (G.amenities.pool>0&&amenitySpotReachable("pool"))||hasAreaFunc("pool"); case "gym":return (G.amenities.gym>0&&amenitySpotReachable("gym"))||hasAreaFunc("gym");
+    case "spa":return (G.amenities.spa>0&&amenitySpotReachable("spa"))||hasAreaFunc("spa"); case "meeting":return (G.amenities.meeting>0&&amenitySpotReachable("meeting"))||hasAreaFunc("meeting");
+    case "expo":return (G.amenities.expo>0&&amenitySpotReachable("expo"))||hasAreaFunc("expo"); case "garden":return (G.amenities.garden>0&&amenitySpotReachable("garden"))||hasAreaFunc("garden");
+    case "parking":return (G.amenities.parking>0&&amenitySpotReachable("parking"))||hasAreaFunc("parking"); case "fountain":return (G.amenities.fountain>0&&amenitySpotReachable("fountain"))||areasList().some(function(a){return a.func==="lobby"&&a.items&&a.items.fountain&&areaReachable(a);});
     case "chef":return G.breakfast>=5; case "breakfast":return G.breakfast>0;
-    case "wifi":return true; case "bigtv":return G.rooms.some(function(r){return r.tv>=3;});
-    case "bath":return G.rooms.some(function(r){return r.bath>=4;});
-    case "desk":return G.rooms.some(function(r){return r.furn>=2;});
+    case "wifi":return hasHotelWifi(); case "bigtv":return G.rooms.some(function(r){return r.tv>=3&&roomReachable(r);});
+    case "bath":return G.rooms.some(function(r){return r.bath>=4&&roomReachable(r);});
+    case "desk":return G.rooms.some(function(r){return r.furn>=2&&roomReachable(r);});
   } return false;
 }
 function topTierDesire(d){
-  if(d==="pool")return G.amenities.pool>=4; if(d==="chef")return true;
-  if(d==="bigtv")return G.rooms.some(function(r){return r.tv>=4;});
-  if(d==="bath")return G.rooms.some(function(r){return r.bath>=5;});
-  if(d==="spa")return G.amenities.spa>=3; return false;
+  if(d==="pool")return G.amenities.pool>=4&&amenitySpotReachable("pool"); if(d==="chef")return true;
+  if(d==="bigtv")return G.rooms.some(function(r){return r.tv>=4&&roomReachable(r);});
+  if(d==="bath")return G.rooms.some(function(r){return r.bath>=5&&roomReachable(r);});
+  if(d==="spa")return G.amenities.spa>=3&&amenitySpotReachable("spa"); return false;
 }
 function priceFor(r){return G.priceByType[r.type]||ROOM_TYPES[r.type].defPrice;}
 function readyRooms(){return G.rooms.filter(function(r){return r.state==="ready";});}
@@ -715,7 +891,7 @@ function doorDecision(g){
     if(allReady.length)return {ok:false,reason:"noPath",text:"No way to reach a room from the lobby."};
     return {ok:false,reason:"noRoom",text:"No room for me."};
   }
-  var fitting=ready.filter(function(r){return ROOM_TYPES[r.type].sleeps>=g.party;});
+  var fitting=ready.filter(function(r){return roomSleeps(r)>=g.party;});
   if(!fitting.length)return {ok:false,reason:"party",text:"Nothing fits my party of "+g.party+"."};
   var desireHas=hasAmenityForDesire(g.desire), top=topTierDesire(g.desire);
   var budget=g.budget*(desireHas?(top?1.25:1.15):1);
@@ -801,19 +977,19 @@ function endOfDay(){
         supplyCost+=bt.perGuest; G.today.costs+=bt.perGuest; /* ledger-only; cash leaves below, once */
         if(G.breakfastMode==="fee"){G.today.feeInc+=bt.fee;}
       }
-      if(r.guest.desire==="pool"&&G.amenities.pool>0)G.today.feeInc+=G.fees.pool;
-      if(r.guest.desire==="spa"&&G.amenities.spa>0)G.today.feeInc+=AMENITIES.spa.fee;
-      if(r.guest.desire==="parking"&&G.amenities.parking>0)G.today.feeInc+=G.fees.parking;
-      if(G.amenities.dining>0&&Math.random()<0.5)G.today.feeInc+=AMENITIES.dining.fee;
-      if(r.guest.desire==="meeting"&&G.amenities.meeting>0)G.today.feeInc+=40;
+      if(r.guest.desire==="pool"&&hasAmenityForDesire("pool"))G.today.feeInc+=G.fees.pool;
+      if(r.guest.desire==="spa"&&hasAmenityForDesire("spa"))G.today.feeInc+=AMENITIES.spa.fee;
+      if(r.guest.desire==="parking"&&hasAmenityForDesire("parking"))G.today.feeInc+=G.fees.parking;
+      if(((G.amenities.dining>0&&amenitySpotReachable("dining"))||hasAreaFunc("bar")||hasAreaFunc("dining"))&&Math.random()<0.5)G.today.feeInc+=AMENITIES.dining.fee;
+      if(r.guest.desire==="meeting"&&hasAmenityForDesire("meeting"))G.today.feeInc+=40;
       r.nightsLeft--;
     }
   });
   G.today.occRooms=occ;
   /* expo / meeting hire with an event manager */
   if(G.staff.eventmgr>0){
-    if(G.amenities.expo>0&&Math.random()<0.55){var h=AMENITIES.expo.hire*G.amenities.expo;G.today.eventInc+=h;feed("Event Manager booked the hall — <b>$"+h+"</b> hire income.");}
-    else if(G.amenities.meeting>0&&Math.random()<0.5){G.today.eventInc+=AMENITIES.meeting.hire;}
+    if(G.amenities.expo>0&&amenitySpotReachable("expo")&&Math.random()<0.55){var h=AMENITIES.expo.hire*G.amenities.expo;G.today.eventInc+=h;feed("Event Manager booked the hall — <b>$"+h+"</b> hire income.");}
+    else if(G.amenities.meeting>0&&amenitySpotReachable("meeting")&&Math.random()<0.5){G.today.eventInc+=AMENITIES.meeting.hire;}
   }
   /* While unlimited cash is on, the real balance is untouched:
      the night's income is recorded in the ledger but not banked. */
@@ -905,7 +1081,10 @@ function staffWork(){
      dirty room, spends two seconds cleaning it, and only then is
      the room ready — see the cleaner agents below (tickCleaners). */
   var hm=G.staff.handyman+(G.staff.manager>0?1:0);
-  var broken=G.rooms.filter(function(r){return r.state==="broken";});
+  /* A handyman can only repair a room he can REACH — a broken room
+     with no path from the lobby stays broken until it is connected
+     (roomReachable is true for every room before a lobby exists). */
+  var broken=G.rooms.filter(function(r){return r.state==="broken"&&roomReachable(r);});
   for(var j=0;j<Math.min(hm,broken.length);j++)repairRoom(broken[j],true);
 }
 /* ---------- Cleaners: housekeepers path to each dirty room ----------
@@ -925,7 +1104,7 @@ function cleanerCount(){return G.staff.housekeeper+(G.staff.manager>0?1:0);}
 function cleanerWalkable(f,x,y){
   if(!inGrid(x,y))return false;
   if(hasHall(f,x,y)||verticalAt(x,y))return true;
-  if(f===1&&(isLobbyTile(x,y)||isDiningTile(x,y)))return true;
+  if(f===1&&(isLobbyTile(x,y)||isDiningTile(x,y)||isAreaWalkTile(x,y)))return true;
   return false;
 }
 function bfsCleanerPath(f,sx,sy,isTarget){
@@ -1008,7 +1187,7 @@ function cleanerRouteToRoom(c,r){
   return cleanerRoute(c,r.floor,df[0]+0.5,df[1]+0.5,[roomStandPt(r)]);
 }
 function cleanerHome(){
-  if(G.lobby>0&&G.lobbyGx!=null){var lc=lobbyCenter();return [1,lc[0],lc[1]];}
+  if(hasAnyLobby()){var lc=lobbyCenter();return [1,lc[0],lc[1]];}
   var r0=G.rooms[0];
   if(r0){var df=doorFront(r0);return [r0.floor,df[0]+0.5,df[1]+0.5];}
   return [1,8,8];
@@ -1030,14 +1209,16 @@ function cleanerPickJob(c){
     if(r.state!=="dirty"&&!r.deepDue)return;
     if(taken[r.id])return;
     var route=cleanerRouteToRoom(c,r);
-    if(!route&&r.floor===c.floor){
-      /* No hallway route (a motel-style layout with no lobby/hallways
-         yet): walk straight across the grass to the door, exactly as
-         guests do in that layout, rather than never cleaning. */
+    if(!route&&r.floor===c.floor&&!hasAnyLobby()){
+      /* No lobby yet (a motel-style layout): walk straight across
+         the grass to the door, exactly as guests do in that layout,
+         rather than never cleaning. Once a lobby EXISTS there is no
+         grass shortcut — a room with no hallway path to its door
+         cannot be reached, so it stays dirty until it is connected. */
       var df2=doorFront(r);
       route=[{f:c.floor,pts:[[c.gx,c.gy],[df2[0]+0.5,df2[1]+0.5],roomStandPt(r)]}];
     }
-    if(!route)return; /* unreachable on another floor — no shaft path, a cleaner can't get in either */
+    if(!route)return; /* unreachable — no path to its door, a cleaner can't get in either */
     var len=0;route.forEach(function(s){if(s.pts)len+=s.pts.length;});
     if(len<bestLen){best=r;bestRoute=route;bestLen=len;}
   });
@@ -1123,7 +1304,10 @@ function tickCleaners(dt){
 }
 /* ---------- Purchases ---------- */
 function buyRoom(type){
-  /* Every floor is placed freeform on its own grid — never auto-filled. */
+  /* Every floor is placed freeform on its own grid — never auto-filled.
+     Rooms are placed ONLY at their tier's fixed size and price;
+     "custom" is a legacy save type and can never be bought. */
+  if(type==="custom"||!ROOM_TYPES[type])return;
   startPlacement({kind:"room",key:type,label:ROOM_TYPES[type].name,cost:ROOM_TYPES[type].cost,w:typeW(type),h:typeH(type)});
 }
 function buyFloor(){
@@ -1220,6 +1404,70 @@ function placeAmenity(key,gx,gy,floor){
   toast(a.name+" placed — "+n[0]); sfx("pop");
   rebuildScene(); updateHUD(); return true;
 }
+
+/* ---------- Areas: place, designate, fit out, expand ---------- */
+function placeArea(gx,gy,floor){
+  var w=(PLACE&&PLACE.w)||AREA_BUILD_W, h=(PLACE&&PLACE.h)||AREA_BUILD_H;
+  if(!footprintFreeF(floor,gx,gy,w,h))return false;
+  if(!spend(w*h*AREA_TILE_COST))return false;
+  if(!G.areas)G.areas=[];
+  var preset=(PLACE&&PLACE.presetFunc)||null;
+  if(preset&&!AREA_FUNCS[preset])preset=null; /* areas only ever carry a sizeable function — never a guest room */
+  var a={id:G.nextAreaId++,gx:gx,gy:gy,floor:floor,w:w,h:h,func:preset,items:{},rot:2};
+  G.areas.push(a);
+  feed("Built an <b>area shell</b> on Floor "+floor+" at "+gx+","+gy+" — <b>"+w+"×"+h+" tiles at $300/tile = "+money(w*h*AREA_TILE_COST)+"</b>"+(a.func?", designated a <b>"+AREA_FUNCS[a.func].name+"</b> — tap it to build the inside.":". It is <b>undesignated</b>: tap it to choose what it is — Lobby, Pool, Gym, Bar, Spa, Dining, Meeting, Expo, Garden, Parking, Extras — then build the inside from the same menu. (Guest rooms are not areas: build them from the Rooms list at their fixed tier size.)")+(hasAnyLobby()&&!areaReachable(a)?" <b>Warning:</b> no hallway path from the lobby touches this spot yet — once designated, this area will earn <b>nothing</b> until a path connects it.":""));
+  toast("Area placed — tap it to "+(a.func?"build the inside":"designate its function")); sfx("pop");
+  G.selected={kind:"area",id:a.id}; G.selectedRoomId=null;
+  rebuildScene(); updateHUD(); return true;
+}
+function designateArea(a,func){
+  if(!a||a.func)return;
+  /* Guest rooms are never designated from an area — they keep the
+     fixed-size-by-tier strategy and are built from the Rooms list.
+     Only the sizeable functions in AREA_FUNCS can be designated. */
+  if(!AREA_FUNCS[func])return;
+  a.func=func; a.items={};
+  var rk=areaReqKey(func), rd=rk?areaItemDef(func,rk):null;
+  feed("Designated the "+a.w+"×"+a.h+" area on Floor "+a.floor+" the <b>"+AREA_FUNCS[func].name+"</b>"+(rd?". It counts as one once its <b>"+rd.name+"</b> is built inside — tap the area to build it and the rest of the inside.":". Tap the area to build the inside.")+(hasAnyLobby()&&!areaReachable(a)?" <b>Warning:</b> no hallway path from the lobby reaches this area yet — like a room with no path to its door, it will earn <b>nothing</b> until a path touches it.":""));
+  toast(AREA_FUNCS[func].name+" designated"+(rd?" — needs its "+rd.name:"")); sfx("pop");
+  rebuildScene(); updateHUD(); refreshSelInfo();
+}
+function buyAreaItem(a,key){
+  if(!a||!a.func)return;
+  var def=areaItemDef(a.func,key); if(!def||(a.items&&a.items[key]))return;
+  if(def.needs&&!(a.items&&a.items[def.needs])){toast(def.name+" needs the "+areaItemDef(a.func,def.needs).name+" built first.");refreshSelInfo();return;}
+  if(!spend(def.cost))return;
+  if(!a.items)a.items={};
+  a.items[key]=true;
+  feed("Built the <b>"+def.name+"</b> inside the "+areaTitle(a)+" on Floor "+a.floor+" ("+money(def.cost)+(def.upkeep?", "+money(def.upkeep)+"/mo":"")+", +"+def.appeal+" Appeal)."+(key==="wifi"?" <b>The hotel now has Wi-Fi.</b>":"")+(def.req?" The "+AREA_FUNCS[a.func].name+" is now <b>functional</b>.":"")+(hasAnyLobby()&&!areaReachable(a)?" <b>Warning:</b> no path from the lobby reaches this area — it earns <b>no benefit</b> until a hallway path touches it.":""));
+  toast(def.name+" built"+(def.req?" — "+AREA_FUNCS[a.func].name+" is functional":"")); sfx("pop");
+  rebuildScene(); updateHUD(); refreshSelInfo();
+}
+function expandArea(a,dir){
+  if(!a)return;
+  var nw=a.w,nh=a.h,ngx=a.gx,ngy=a.gy,added=0;
+  if(dir==="E"){nw=a.w+1;added=a.h;}
+  else if(dir==="W"){nw=a.w+1;ngx=a.gx-1;added=a.h;}
+  else if(dir==="S"){nh=a.h+1;added=a.w;}
+  else if(dir==="N"){nh=a.h+1;ngy=a.gy-1;added=a.w;}
+  if(nw>16||nh>12){toast("That area is already at its maximum size that way (16×12).");refreshSelInfo();return;}
+  var cost=added*AREA_TILE_COST;
+  if(!areaRectFree(ngx,ngy,nw,nh,a.floor,a.id)){toast("Can't expand "+({N:"north",E:"east",S:"south",W:"west"})[dir]+" — a room, shaft, container, amenity or another area is in the way, or the plot edge is too close.");refreshSelInfo();return;}
+  if(!spend(cost))return;
+  a.gx=ngx;a.gy=ngy;a.w=nw;a.h=nh;
+  for(var y=a.gy;y<a.gy+a.h;y++)for(var x=a.gx;x<a.gx+a.w;x++)delete G.hallTiles[hallKey(a.floor,x,y)];
+  feed("Expanded the <b>"+areaTitle(a)+"</b> "+({N:"north",E:"east",S:"south",W:"west"})[dir]+" — <b>+"+added+" tiles at $300 = "+money(cost)+"</b>, now "+a.w+"×"+a.h+" tiles.");
+  toast("Expanded — now "+a.w+"×"+a.h+" · "+money(cost)); sfx("pop");
+  rebuildScene(); updateHUD(); refreshSelInfo();
+}
+function removeArea(a){
+  if(!a)return;
+  if(!armCheck("area:"+a.id)){toast("Remove this "+areaTitle(a)+"? Tap Remove again to confirm — you get $0 back, and everything built inside goes with it.");refreshSelInfo();return;}
+  G.areas=G.areas.filter(function(x){return x.id!==a.id;});
+  feed("Removed the <b>"+areaTitle(a)+"</b> on Floor "+a.floor+" — $0 back. Its tiles are clear to build on again.");
+  toast("Area removed — $0 back."); hideSel(); rebuildScene(); updateHUD();
+}
+
 function buyAmenity(key){
   var a=AMENITIES[key], cur=G.amenities[key], n=a.tiers[cur+1]; if(!n)return;
   if(!G.amenitySpots)G.amenitySpots={};
@@ -1329,7 +1577,7 @@ function setFloor(f){
   /* Switching floors mid-placement retargets the tool to the floor
      now on screen, so a hallway or room can never land on the floor
      you just left. */
-  if(PLACE&&((PLACE.kind==="hall"||PLACE.kind==="room"||PLACE.kind==="amenity")||(PLACE.kind==="move"&&(PLACE.moveKind==="room"||PLACE.moveKind==="amenity")))){
+  if(PLACE&&((PLACE.kind==="hall"||PLACE.kind==="room"||PLACE.kind==="amenity"||PLACE.kind==="area")||(PLACE.kind==="move"&&(PLACE.moveKind==="room"||PLACE.moveKind==="amenity"||PLACE.moveKind==="area")))){
     PLACE.floor=G.curFloor; PLACE.ghost=null;
     var lab=document.getElementById("placeLabel");
     if(lab)lab.innerHTML="<b>Placing: "+PLACE.label+"</b> — "+money(PLACE.cost)+(unlimitedCash()?" (unlimited cash)":"")+(G.curFloor>1?" · on Floor "+G.curFloor:"");
@@ -1401,16 +1649,24 @@ function renderBuild(b){
   h+='<div class="card"><div class="t"><span>Land</span><span class="pill">'+GRID_W+'×'+GRID_H+' tiles · every floor</span></div>'+
      '<div class="row"><span class="pill good">Open land — build anywhere, nothing to buy</span></div></div>';
   h+='<div class="card"><div class="t"><span>Hallway 2×2</span><span class="pill">'+hallCount+' tiles · '+conn+'/'+Math.max(1,G.rooms.length)+' connected</span></div>'+
-     '<div class="row"><button data-placehall="1">Place — '+money(HALL_COST*4)+'</button>'+(G.lobby>0?'<button data-paveall="1">Auto-connect rooms</button>':'')+'</div></div>';
-  h+='<div class="card"><div class="t"><span>Lobby — container</span><span class="pill">'+(G.lobby>0?LOBBY_TIERS[G.lobby].name+" · "+lobbyW()+"×"+lobbyH():"Not built")+'</span></div>'+
-     (G.lobby===0?'<div class="row"><button data-placelobby="1">Place — '+money(LOBBY_TIERS[1].cost)+'</button></div>':'<div class="sub">A freeform container: tap it on the grid to move it, rotate its door, or resize it wider / taller. A fountain can be placed inside it.</div>')+'</div>';
-  h+='<div class="card"><div class="t"><span>Breakfast / Dining — container</span><span class="pill">'+(G.diningGx!=null?BREAKFAST_TIERS[G.breakfast].name+" · "+diningW()+"×"+diningH():"Not placed")+'</span></div>'+
-     (G.diningGx==null?'<div class="row"><button data-placedining="1">Place dining area 4×3 — '+(G.breakfast===0?money(BREAKFAST_TIERS[1].cost)+" (includes Cereal & Toast)":"Free — breakfast already unlocked")+'</button></div>':'<div class="sub">Its own container, separate from the lobby: tap it on the grid to move it, resize it wider / taller, rotate it, or upgrade breakfast. More floor = more tables drawn inside.</div>')+'</div>';
+     '<div class="row"><button data-placehall="1">Place — '+money(HALL_COST*4)+'</button></div></div>';
+  var abw=AREA_BUILD_W,abh=AREA_BUILD_H,abTiles=abw*abh;
+  h+='<div class="card"><div class="t"><span>Build an Area — $300 / tile</span><span class="pill">'+abw+'×'+abh+' · '+abTiles+' tiles · '+money(abTiles*AREA_TILE_COST)+'</span></div>'+
+     '<div class="sub">For everything except guest rooms: define a size, place the empty shell, then tap it to designate what it is — Lobby, Pool, Gym, Bar, Spa, Dining, Meeting, Expo, Garden, Parking, Extras — and build the inside from its menu (a pool room gets a pool, slide, ladder, shower and bathroom; a lobby gets a desk, fountain, couches, tables and Wi-Fi). A placed area expands in any direction at $300 per added tile. Guest rooms are not built this way — they stay at the fixed size of their tier, from the Rooms list below. <b>Once a lobby exists, an area only counts when a hallway path from the lobby touches it</b> — an unconnected area earns no Appeal and satisfies no guest, exactly like a room with no path to its door.</div>'+
+     '<div class="row"><span class="pill">Width</span><button data-areaw="-1">−</button><span class="pill">'+abw+'</span><button data-areaw="1">+</button><span class="pill">Height</span><button data-areah="-1">−</button><span class="pill">'+abh+'</span><button data-areah="1">+</button><button class="primary" data-placearea="1">Place area — '+money(abTiles*AREA_TILE_COST)+'</button></div></div>';
+  var areaLobby=(G.areas||[]).filter(function(a){return a.func==="lobby";})[0];
+  h+='<div class="card"><div class="t"><span>Lobby — area</span><span class="pill">'+(G.lobby>0?LOBBY_TIERS[G.lobby].name+" (earlier container) · "+lobbyW()+"×"+lobbyH():(areaLobby?(areaFunctional(areaLobby)?"Functional · "+areaLobby.w+"×"+areaLobby.h:"Placed — needs its Lobby Desk · "+areaLobby.w+"×"+areaLobby.h):"Not built"))+'</span></div>'+
+     '<div class="row"><button data-areafunc="lobby">Place Lobby area 4×3 — '+money(12*AREA_TILE_COST)+'</button>'+(areaLobby?'<span class="pill good">Tap the lobby area on the grid to add its desk, fountain, couches, tables & Wi-Fi</span>':'<span class="pill">Counts as the hotel lobby once its Lobby Desk is built inside</span>')+'</div>'+(G.lobby>0?'<div class="sub">Your earlier lobby container is still on the grid — tap it to move, rotate or resize it.</div>':'')+'</div>';
+  h+='<div class="card"><div class="t"><span>Breakfast / Dining & Bar — areas</span><span class="pill">'+(G.diningGx!=null?BREAKFAST_TIERS[G.breakfast].name+" (earlier container) · "+diningW()+"×"+diningH():"Built as areas now")+'</span></div>'+
+     '<div class="row"><button data-areafunc="dining">Place Dining area 4×3 — '+money(12*AREA_TILE_COST)+'</button><button data-areafunc="bar">Place Bar & Restaurant area 5×3 — '+money(15*AREA_TILE_COST)+'</button></div>'+
+     (G.diningGx!=null?'<div class="sub">Your earlier dining container is still on the grid — tap it to move it, resize it, rotate it, or upgrade breakfast.</div>':'')+'</div>';
   var vs=G.verticals||[];
   h+='<div class="card"><div class="t"><span>Stairs / Elevator</span><span class="pill">'+(vs.length?vs.map(function(v){return VERTICAL_TYPES[v.kind].name;}).join(" + "):"None")+'</span></div>'+
      '<div class="row"><button data-placestairs="1">Stairwell — '+money(VERTICAL_TYPES.stairs.cost)+'</button><button data-placeelevator="1">Elevator — '+money(VERTICAL_TYPES.elevator.cost)+'</button></div></div>';
-  h+="<h3>Rooms</h3>";
+  h+="<h3>Rooms — fixed size by tier</h3>";
+  h+='<div class="card"><div class="sub">Guest rooms keep the normal strategy: each tier is one fixed size and one fixed price — pick the tier, place it at that size, done. Rooms are never sized, resized or expanded like areas; for a bigger room, build a bigger tier. (Everything else — lobby, pool, gym, bar… — uses the sizeable areas above.)</div></div>';
   Object.keys(ROOM_TYPES).forEach(function(k){
+    if(k==="custom")return; /* legacy save-compat type only — guest rooms are built here, by tier, never designated from an area */
     var t=ROOM_TYPES[k];
     h+='<div class="card"><div class="t"><span>'+t.name+'</span><span class="mono">'+money(t.cost)+'</span></div>'+
       '<div class="row"><button data-placeroom="'+k+'">Place →</button>'+
@@ -1421,19 +1677,22 @@ function renderBuild(b){
   var fc=FLOOR_COST[G.floors]||38000;
   h+='<div class="card"><div class="t"><span>Add a floor</span><span class="mono">'+money(fc)+'</span></div>'+
      '<div class="row"><button data-buyfloor="1">Add Floor '+(G.floors+1)+'</button></div></div>';
-  var ln=LOBBY_TIERS[G.lobby+1];
-  h+="<h3>Lobby</h3>";
-  h+='<div class="card"><div class="t"><span>'+LOBBY_TIERS[G.lobby].name+'</span><span class="pill">+'+LOBBY_TIERS[G.lobby].appeal+' appeal</span>'+(G.lobby>0?'<span class="pill">'+lobbyW()+'×'+lobbyH()+' tiles</span>':'')+'</div>'+
-     (G.lobby===0&&ln?'<div class="row"><button data-placelobby="1">Place: '+ln.name+' · 2×2 — '+money(ln.cost)+'</button></div>':'<div class="row"><span class="pill good">Container built — tap it on the grid to upgrade, move, rotate or resize it</span></div>')+'</div>';
-  h+="<h3>Amenities</h3>";
+  h+="<h3>Your areas</h3>";
+  if(!(G.areas||[]).length)h+='<div class="card"><div class="sub">No areas yet — define a size above, place the shell, then tap it to designate its function and fit out the inside.</div></div>';
+  (G.areas||[]).forEach(function(a){
+    var rk=a.func?areaReqKey(a.func):null;
+    h+='<div class="card"><div class="t"><span>'+areaTitle(a)+'</span><span class="pill">Floor '+a.floor+' · '+a.w+'×'+a.h+'</span></div><div class="row">'+(a.func?(areaFunctional(a)?'<span class="pill good">Functional</span>':'<span class="pill warn">Needs its '+(rk?areaItemDef(a.func,rk).name:"")+'</span>'):'<span class="pill warn">Undesignated — tap it on the grid to choose its function</span>')+(a.func&&hasAnyLobby()&&!areaReachable(a)?'<span class="pill warn">NO PATH — earns nothing until a hallway path from the lobby touches it</span>':'')+'<span class="pill">Tap it on the grid to build inside / expand</span></div></div>';
+  });
+  h+="<h3>Amenities — built as areas</h3>";
+  var amenFunc={pool:"pool",gym:"gym",spa:"spa",meeting:"meeting",expo:"expo",dining:"bar",garden:"garden",parking:"parking",fountain:null,extras:"extras"};
   Object.keys(AMENITIES).forEach(function(k){
-    var a=AMENITIES[k],cur=G.amenities[k],n=a.tiers[cur+1];
+    var a=AMENITIES[k],cur=G.amenities[k];
     var spot=(G.amenitySpots||{})[k];
-    var sz=n?amenitySize(k,cur+1):null;
+    var fk=amenFunc[k];
     h+='<div class="card"><div class="t"><span>'+a.name+'</span><span class="pill">'+a.tiers[cur][0]+'</span></div>'+
       '<div class="row">'+
-      (spot?'<span class="pill good">Placed · Floor '+spot.floor+' · '+spot.w+'×'+spot.h+' — tap it on the grid to upgrade, move or remove it</span>':'<span class="pill warn">Not placed yet</span>')+
-      (n&&!spot?'<button data-buyamen="'+k+'">Place: '+n[0]+' · '+sz[0]+'×'+sz[1]+' — '+money(n[1])+'</button>':'')+
+      (spot?'<span class="pill good">Placed (earlier build) · Floor '+spot.floor+' · '+spot.w+'×'+spot.h+' — tap it on the grid to upgrade, move or remove it</span>':'')+
+      (fk?'<button data-areafunc="'+fk+'">Build as '+AREA_FUNCS[fk].name+' area '+AREA_FUNCS[fk].preset[0]+'×'+AREA_FUNCS[fk].preset[1]+' — '+money(AREA_FUNCS[fk].preset[0]*AREA_FUNCS[fk].preset[1]*AREA_TILE_COST)+' shell</button>':'<span class="pill">Now an item inside a Lobby area — build a Lobby area, then add its Fountain</span>')+
       '</div></div>';
   });
   b.innerHTML=h;
@@ -1443,6 +1702,10 @@ function bindBuyButtons(b){
   Array.prototype.forEach.call(b.querySelectorAll("[data-expandland]"),function(x){x.addEventListener("click",expandLand);});
   Array.prototype.forEach.call(b.querySelectorAll("[data-placeroom]"),function(x){x.addEventListener("click",function(){var k=x.getAttribute("data-placeroom");startPlacement({kind:"room",key:k,label:ROOM_TYPES[k].name,cost:ROOM_TYPES[k].cost,w:typeW(k),h:typeH(k)});});});
   Array.prototype.forEach.call(b.querySelectorAll("[data-placehall]"),function(x){x.addEventListener("click",function(){startPlacement({kind:"hall",label:"Hallway (2×2 area)",cost:HALL_COST*4,w:2,h:2});});});
+  Array.prototype.forEach.call(b.querySelectorAll("[data-placearea]"),function(x){x.addEventListener("click",function(){startPlacement({kind:"area",presetFunc:null,label:"Area shell "+AREA_BUILD_W+"×"+AREA_BUILD_H,cost:AREA_BUILD_W*AREA_BUILD_H*AREA_TILE_COST,w:AREA_BUILD_W,h:AREA_BUILD_H});});});
+  Array.prototype.forEach.call(b.querySelectorAll("[data-areafunc]"),function(x){x.addEventListener("click",function(){var fk=x.getAttribute("data-areafunc");var pr=AREA_FUNCS[fk].preset;startPlacement({kind:"area",presetFunc:fk,label:AREA_FUNCS[fk].name+" area "+pr[0]+"×"+pr[1]+" (shell)",cost:pr[0]*pr[1]*AREA_TILE_COST,w:pr[0],h:pr[1]});});});
+  Array.prototype.forEach.call(b.querySelectorAll("[data-areaw]"),function(x){x.addEventListener("click",function(){AREA_BUILD_W=Math.max(2,Math.min(12,AREA_BUILD_W+(+x.getAttribute("data-areaw"))));renderPanel();});});
+  Array.prototype.forEach.call(b.querySelectorAll("[data-areah]"),function(x){x.addEventListener("click",function(){AREA_BUILD_H=Math.max(2,Math.min(12,AREA_BUILD_H+(+x.getAttribute("data-areah"))));renderPanel();});});
   Array.prototype.forEach.call(b.querySelectorAll("[data-placelobby]"),function(x){x.addEventListener("click",function(){startPlacement({kind:"lobby",label:"Small Lobby (Corner Desk)",cost:LOBBY_TIERS[1].cost,w:2,h:2});});});
   Array.prototype.forEach.call(b.querySelectorAll("[data-placedining]"),function(x){x.addEventListener("click",function(){startPlacement({kind:"dining",label:"Breakfast / Dining area (container, 4×3)",cost:G.breakfast===0?BREAKFAST_TIERS[1].cost:0,w:4,h:3});});});
   Array.prototype.forEach.call(b.querySelectorAll("[data-placestairs]"),function(x){x.addEventListener("click",function(){startPlacement({kind:"stairs",label:"Stairwell (all floors)",cost:VERTICAL_TYPES.stairs.cost,w:2,h:2});});});
@@ -1452,7 +1715,6 @@ function bindBuyButtons(b){
   Array.prototype.forEach.call(b.querySelectorAll("[data-buylobby]"),function(x){x.addEventListener("click",buyLobby);});
   Array.prototype.forEach.call(b.querySelectorAll("[data-buybreakfast]"),function(x){x.addEventListener("click",buyBreakfast);});
   Array.prototype.forEach.call(b.querySelectorAll("[data-buyamen]"),function(x){x.addEventListener("click",function(){buyAmenity(x.getAttribute("data-buyamen"));});});
-  Array.prototype.forEach.call(b.querySelectorAll("[data-paveall]"),function(x){x.addEventListener("click",paveAllHall);});
   Array.prototype.forEach.call(b.querySelectorAll("[data-atrium]"),function(x){x.addEventListener("click",function(){
     if(G.lobby>=5)return;
     /* the conversion raises the tier, so the footprint grows too —
@@ -1524,12 +1786,15 @@ var HALL_COST=30;
    REACHABILITY RULE: connections are judged by TOUCH. Once a lobby
    exists, any hallway path that touches the lobby is connected to
    it, and a room can be used when that network reaches the tile in
-   front of its door or a tile right beside that doorstep. Any path
-   that touches a stairwell or elevator shaft links its whole floor
-   to the others through the shaft. No touching path = nobody can
-   get to the room, and guests will turn away. Before any lobby is
-   built the hotel is a motel: guests cross the grass straight to
-   the door. */
+   front of its door or a tile right beside that doorstep. The SAME
+   rule covers every designated AREA and placed amenity: the network
+   must touch its footprint (see areaReachable / amenitySpotReachable),
+   or nobody can get to it and it earns the hotel nothing — no
+   Appeal, no desire satisfaction, no fees, no Wi-Fi. Any path that
+   touches a stairwell or elevator shaft links its whole floor to
+   the others through the shaft. No touching path = nobody can get
+   there, and guests will turn away. Before any lobby is built the
+   hotel is a motel: guests cross the grass straight to the door. */
 /* There is NO buying property any more: the plot is simply huge
    from the start — far bigger than the old fully-expanded 60×34
    plot — on every floor, so a large multistory complex of buildings
@@ -1589,7 +1854,7 @@ function amenityAtCellF(floor,gx,gy){
 }
 function cellFree(gx,gy){return cellFreeF(1,gx,gy);}
 function cellFreeF(floor,gx,gy){
-  return inGrid(gx,gy)&&!roomAtCellF(floor,gx,gy)&&!(floor===1&&isLobbyTile(gx,gy))&&!(floor===1&&isDiningTile(gx,gy))&&!verticalAt(gx,gy)&&!hasHall(floor,gx,gy)&&!amenityAtCellF(floor,gx,gy);
+  return inGrid(gx,gy)&&!roomAtCellF(floor,gx,gy)&&!(floor===1&&isLobbyTile(gx,gy))&&!(floor===1&&isDiningTile(gx,gy))&&!verticalAt(gx,gy)&&!hasHall(floor,gx,gy)&&!amenityAtCellF(floor,gx,gy)&&!areaAtCellF(floor,gx,gy);
 }
 function footprintFree(gx,gy,w,h){return footprintFreeF(1,gx,gy,w,h);}
 function footprintFreeF(floor,gx,gy,w,h){
@@ -1610,7 +1875,7 @@ function hallBlockStatus(f,gx,gy){
   var fresh=0;
   for(var y=gy;y<gy+2;y++)for(var x=gx;x<gx+2;x++){
     if(!inGrid(x,y))return {valid:false,fresh:0};
-    if(roomAtCellF(f,x,y)||(f===1&&isLobbyTile(x,y))||(f===1&&isDiningTile(x,y))||verticalAt(x,y)||amenityAtCellF(f,x,y))return {valid:false,fresh:0};
+    if(roomAtCellF(f,x,y)||(f===1&&isLobbyTile(x,y))||(f===1&&isDiningTile(x,y))||verticalAt(x,y)||amenityAtCellF(f,x,y)||areaAtCellF(f,x,y))return {valid:false,fresh:0};
     if(!hasHall(f,x,y))fresh++;
   }
   return {valid:fresh>0,fresh:fresh};
@@ -1621,15 +1886,17 @@ function hallBlockStatus(f,gx,gy){
    ANY path that touches the lobby joins the network. */
 function reachableSet(){
   var seen={},queue=[];
-  if(G.lobby===0||G.lobbyGx==null)return seen;
-  for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){seen[x+","+y]=true;queue.push([x,y]);}
+  if(G.lobby>0&&G.lobbyGx!=null)for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){seen[x+","+y]=true;queue.push([x,y]);}
+  /* a FUNCTIONAL lobby area (desk built) is a lobby too: the flood
+     starts from its tiles exactly as from the legacy container */
+  functionalLobbyAreas().forEach(function(a){for(var y2=a.gy;y2<a.gy+a.h;y2++)for(var x2=a.gx;x2<a.gx+a.w;x2++){var kk=x2+","+y2;if(!seen[kk]){seen[kk]=true;queue.push([x2,y2]);}}});
   var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
   while(queue.length){
     var cur=queue.shift();
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(seen[k]||!inGrid(nx,ny))continue;
-      if(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)){seen[k]=true;queue.push([nx,ny]);}
+      if(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)||isAreaWalkTile(nx,ny)){seen[k]=true;queue.push([nx,ny]);}
     }
   }
   return seen;
@@ -1674,7 +1941,7 @@ function touchesSet(seen,gx,gy){
 function verticalLive(){
   var vs=G.verticals||[];
   if(!vs.length)return false;
-  if(G.lobby===0||G.lobbyGx==null)return true;
+  if(!hasAnyLobby())return true;
   var seen=reachableSet();
   for(var i=0;i<vs.length;i++){var v=vs[i];
     for(var y=v.gy;y<v.gy+v.h;y++)for(var x=v.gx;x<v.gx+v.w;x++)if(touchesSet(seen,x,y))return true;
@@ -1684,8 +1951,9 @@ function verticalLive(){
 function roomReachable(r){
   var df=doorFront(r);
   if(r.floor===1){
-    if(G.lobby===0)return true; /* no lobby yet — motel-style, across the grass */
+    if(!hasAnyLobby())return true; /* no lobby yet — motel-style, across the grass */
     if(isLobbyTile(df[0],df[1]))return true; /* door opens straight into the lobby */
+    if(isFunctionalLobbyTile(df[0],df[1]))return true; /* door opens straight into a functional lobby area */
     if(verticalAt(df[0],df[1]))return verticalLive(); /* door opens onto the stair/elevator landing */
     /* Any hallway path that touches the lobby is the lobby's network;
        the room is connected when that network reaches the doorstep
@@ -1707,6 +1975,43 @@ function roomReachable(r){
 function connectedCount(){
   var n=0;G.rooms.forEach(function(r){if(roomReachable(r))n++;});return n;
 }
+/* AREAS obey the same rule as rooms. Once a lobby exists, an area
+   only counts when the lobby's hallway network TOUCHES its
+   footprint: on Floor 1 the flood from the lobby (hallways + lobby
+   + walk-through lobby/dining/bar areas + shafts) must reach a tile
+   of the area or pass right beside one; upstairs a LIVE shaft must
+   serve the floor and that floor's network must touch it. A
+   functional lobby area IS the lobby — the network starts on its
+   own tiles, so it is always reached. Before any lobby exists the
+   hotel is a motel and everything is crossed to over the grass.
+   An area that fails this earns NOTHING: no Appeal, no desire
+   satisfaction, no fees, no Wi-Fi — until a path connects it. */
+function areaReachable(a){
+  if(!a)return false;
+  if(!hasAnyLobby())return true;
+  if(a.floor===1&&a.func==="lobby"&&areaFunctional(a))return true;
+  if(a.floor>1&&!verticalLive())return false;
+  var seen=a.floor===1?reachableSet():reachableSetFloor(a.floor);
+  for(var y=a.gy;y<a.gy+a.h;y++)for(var x=a.gx;x<a.gx+a.w;x++)if(touchesSet(seen,x,y))return true;
+  return false;
+}
+/* Placed amenities from earlier builds (one fixed spot per kind)
+   follow the identical touch rule against their own footprint. A
+   tier with no spot on record (a very old save) is never stranded. */
+function amenitySpotReachable(key){
+  var sp=(G.amenitySpots||{})[key];
+  if(!sp)return true;
+  if(!hasAnyLobby())return true;
+  if(sp.floor>1&&!verticalLive())return false;
+  var seen=sp.floor===1?reachableSet():reachableSetFloor(sp.floor);
+  for(var y=sp.gy;y<sp.gy+sp.h;y++)for(var x=sp.gx;x<sp.gx+sp.w;x++)if(touchesSet(seen,x,y))return true;
+  return false;
+}
+/* Designated areas with no path from the lobby (optionally only
+   those on one floor) — they show NO PATH and earn nothing. */
+function unreachableAreaCount(floor){
+  var n=0;areasList().forEach(function(a){if(a.func&&(floor==null||a.floor===floor)&&!areaReachable(a))n++;});return n;
+}
 /* BFS path (list of tile centres) from the lobby to a room's door
    front, walking only hallway + lobby tiles. The walk may end on
    the doorstep tile itself or on any walkable tile right beside it
@@ -1715,20 +2020,22 @@ function connectedCount(){
 function gridPathToRoom(r){
   var df=doorFront(r);
   if(isLobbyTile(df[0],df[1]))return [[df[0]+0.5,df[1]+0.5]];
-  function walkable(x,y){return inGrid(x,y)&&(hasHall(1,x,y)||isLobbyTile(x,y)||isDiningTile(x,y)||!!verticalAt(x,y));}
+  if(isFunctionalLobbyTile(df[0],df[1]))return [[df[0]+0.5,df[1]+0.5]];
+  function walkable(x,y){return inGrid(x,y)&&(hasHall(1,x,y)||isLobbyTile(x,y)||isDiningTile(x,y)||!!verticalAt(x,y)||isAreaWalkTile(x,y));}
   var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
   var targets={};
   if(walkable(df[0],df[1]))targets[df[0]+","+df[1]]=true;
   for(var ti=0;ti<4;ti++){var tx2=df[0]+dirs[ti][0],ty2=df[1]+dirs[ti][1];if(walkable(tx2,ty2))targets[tx2+","+ty2]=true;}
   if(!Object.keys(targets).length)return null;
   var prev={},queue=[],found=null;
-  for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){var k0=x+","+y;if(!prev[k0]){prev[k0]="start";queue.push([x,y]);if(targets[k0])found=k0;}}
+  if(G.lobbyGx!=null)for(var y=G.lobbyGy;y<G.lobbyGy+lobbyH();y++)for(var x=G.lobbyGx;x<G.lobbyGx+lobbyW();x++){var k0=x+","+y;if(!prev[k0]){prev[k0]="start";queue.push([x,y]);if(targets[k0])found=k0;}}
+  functionalLobbyAreas().forEach(function(a){for(var yy=a.gy;yy<a.gy+a.h;yy++)for(var xx=a.gx;xx<a.gx+a.w;xx++){var ka=xx+","+yy;if(!prev[ka]){prev[ka]="start";queue.push([xx,yy]);if(targets[ka])found=ka;}}});
   while(queue.length&&!found){
     var cur=queue.shift();
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(prev[k]||!inGrid(nx,ny))continue;
-      if(!(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)))continue;
+      if(!(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)||isAreaWalkTile(nx,ny)))continue;
       prev[k]=cur[0]+","+cur[1];queue.push([nx,ny]);
       if(targets[k]){found=k;break;}
     }
@@ -1743,18 +2050,19 @@ function gridPathToRoom(r){
    shaft tile on Floor 1 — how upstairs guests actually get up. */
 function gridPathToVertical(){
   var vs=G.verticals||[];
-  if(!vs.length||G.lobby===0||G.lobbyGx==null)return null;
+  if(!vs.length||!hasAnyLobby())return null;
   var targets={};
   vs.forEach(function(v){for(var y=v.gy;y<v.gy+v.h;y++)for(var x=v.gx;x<v.gx+v.w;x++)targets[x+","+y]=true;});
   var prev={},queue=[],found=null;
-  for(var y0=G.lobbyGy;y0<G.lobbyGy+lobbyH();y0++)for(var x0=G.lobbyGx;x0<G.lobbyGx+lobbyW();x0++){var k0=x0+","+y0;if(!prev[k0]){prev[k0]="start";queue.push([x0,y0]);if(targets[k0])found=k0;}}
+  if(G.lobbyGx!=null)for(var y0=G.lobbyGy;y0<G.lobbyGy+lobbyH();y0++)for(var x0=G.lobbyGx;x0<G.lobbyGx+lobbyW();x0++){var k0=x0+","+y0;if(!prev[k0]){prev[k0]="start";queue.push([x0,y0]);if(targets[k0])found=k0;}}
+  functionalLobbyAreas().forEach(function(a){for(var yy=a.gy;yy<a.gy+a.h;yy++)for(var xx=a.gx;xx<a.gx+a.w;xx++){var ka=xx+","+yy;if(!prev[ka]){prev[ka]="start";queue.push([xx,yy]);if(targets[ka])found=ka;}}});
   var dirs=[[1,0],[-1,0],[0,1],[0,-1]];
   while(queue.length&&!found){
     var cur=queue.shift();
     for(var i=0;i<4;i++){
       var nx=cur[0]+dirs[i][0],ny=cur[1]+dirs[i][1],k=nx+","+ny;
       if(prev[k]||!inGrid(nx,ny))continue;
-      if(!(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)))continue;
+      if(!(hasHall(1,nx,ny)||isLobbyTile(nx,ny)||isDiningTile(nx,ny)||verticalAt(nx,ny)||isAreaWalkTile(nx,ny)))continue;
       prev[k]=cur[0]+","+cur[1];queue.push([nx,ny]);
       if(targets[k]){found=k;break;}
     }
@@ -1771,34 +2079,6 @@ function buildHallTile(gx,gy){
   sfx("pop");
   feed("Laid a <b>hallway tile</b> at grid "+gx+","+gy+" ($"+HALL_COST+"). Hallways are how guests get from the lobby to a room's door.");
   rebuildScene();updateHUD();
-}
-function paveAllHall(){
-  /* Connect every unreachable room on EVERY floor: on Floor 1 the run
-     starts at the lobby; upstairs it starts at the stair/elevator
-     shaft (which is why a shaft has to exist and be live first). */
-  if(G.lobby===0||G.lobbyGx==null){toast("Build the lobby first — hallways connect rooms to the lobby, and upstairs rooms to the stairs/elevator.");return;}
-  if(G.floors>1&&!(G.verticals||[]).length){toast("Upper floors have no stairwell or elevator yet — place one on Floor 1 first; its shaft rises through every floor.");return;}
-  var placed=0;
-  G.rooms.filter(function(r){return !roomReachable(r);}).forEach(function(r){
-    var f=r.floor, df=doorFront(r);
-    if(!inGrid(df[0],df[1]))return;
-    var sx,sy;
-    if(f===1){sx=G.lobbyGx+(lobbyW()>2?1:0); sy=G.lobbyGy+(lobbyH()>2?1:0);}
-    else{var v=(G.verticals||[])[0]; if(!v)return; sx=v.gx; sy=v.gy;}
-    var x=sx,y=sy,guard=0;
-    while((x!==df[0]||y!==df[1])&&guard++<80){
-      if(x<df[0])x++;else if(x>df[0])x--;else if(y<df[1])y++;else if(y>df[1])y--;
-      if(cellFreeF(f,x,y)){G.hallTiles[hallKey(f,x,y)]=true;placed++;}
-      else if(roomAtCellF(f,x,y)||(f===1&&isLobbyTile(x,y))||(f===1&&isDiningTile(x,y))||verticalAt(x,y)){
-        if(y<GRID_H-1&&cellFreeF(f,x,y+1))y++;else if(y>0&&cellFreeF(f,x,y-1))y--;else break;
-      }
-    }
-    if(cellFreeF(f,df[0],df[1])){G.hallTiles[hallKey(f,df[0],df[1])]=true;placed++;}
-  });
-  if(!placed){toast("No new hallway tiles needed — or a room's door faces off the grid / into a wall. Rotate it when placing.");return;}
-  feed("Laid <b>"+placed+" hallway tiles</b> connecting rooms to the lobby and the stairs/elevator.");
-  toast("Hallways laid — check each room reads CONNECTED.");
-  rebuildScene();updateHUD();renderPanel();
 }
 function renderPrices(b){
   var h="<h3>Nightly price by room type</h3>";
@@ -2123,7 +2403,8 @@ function fitCamera(){
   camZ=1; camX=0; camY=0;
   try{
     var fp=null;
-    if(G&&G.lobby>0&&G.lobbyGx!=null)fp=iso(G.lobbyGx+lobbyW()/2,G.lobbyGy+lobbyH()/2);
+    var plr2=G?primaryLobbyRect():null;
+    if(plr2)fp=iso(plr2.gx+plr2.w/2,plr2.gy+plr2.h/2);
     else if(G&&G.rooms.length)fp=iso(G.rooms[0].gx+roomW(G.rooms[0])/2,G.rooms[0].gy+roomH(G.rooms[0])/2);
     if(fp){camX=Math.round(CVW/2-fp[0]);camY=Math.round(CVH/2-fp[1]);}
   }catch(e){}
@@ -2215,10 +2496,12 @@ function renderStage(){
     if(G.curFloor===1){
       var conn=connectedCount(),grooms=G.rooms.filter(function(r){return r.floor===1;});
       var noPath=grooms.length-conn;
-      captionEl.textContent=GRID_W+"×"+GRID_H+" · "+grooms.length+" room"+(grooms.length===1?"":"s")+(G.lobby===0?" · no lobby":" · "+conn+" connected"+(noPath?" · "+noPath+" NO PATH":""))+(dirty?" · "+dirty+" dirty":"")+(broken?" · "+broken+" broken":"")+" · drag to pan · pinch / scroll to zoom";
+      var aNoPath=hasAnyLobby()?unreachableAreaCount(1):0;
+      captionEl.textContent=GRID_W+"×"+GRID_H+" · "+grooms.length+" room"+(grooms.length===1?"":"s")+(!hasAnyLobby()?" · no lobby":" · "+conn+" connected"+(noPath?" · "+noPath+" NO PATH":"")+(aNoPath?" · "+aNoPath+" area"+(aNoPath===1?"":"s")+" NO PATH":""))+(dirty?" · "+dirty+" dirty":"")+(broken?" · "+broken+" broken":"")+" · drag to pan · pinch / scroll to zoom";
     }else{
       var connF=rooms.filter(function(r){return roomReachable(r);}).length;
-      captionEl.textContent="Floor "+G.curFloor+" · "+rooms.length+" room"+(rooms.length===1?"":"s")+(rooms.length?" · "+connF+" connected":" · blank")+" · "+((G.verticals||[]).length?"shaft reaches here":"NO STAIRS/ELEVATOR")+(dirty?" · "+dirty+" dirty":"")+(broken?" · "+broken+" broken":"")+" · drag to pan · pinch / scroll to zoom";
+      var aNoPathF=hasAnyLobby()?unreachableAreaCount(G.curFloor):0;
+      captionEl.textContent="Floor "+G.curFloor+" · "+rooms.length+" room"+(rooms.length===1?"":"s")+(rooms.length?" · "+connF+" connected":" · blank")+(aNoPathF?" · "+aNoPathF+" area"+(aNoPathF===1?"":"s")+" NO PATH":"")+" · "+((G.verticals||[]).length?"shaft reaches here":"NO STAIRS/ELEVATOR")+(dirty?" · "+dirty+" dirty":"")+(broken?" · "+broken+" broken":"")+" · drag to pan · pinch / scroll to zoom";
     }
   }
   buildStaff();
@@ -2347,6 +2630,14 @@ function computeGhost(g){
     var agy=Math.max(0,Math.min(GRID_H-ah,Math.floor(g.gy)-Math.floor((ah-1)/2)));
     return {gx:agx,gy:agy,w:aw,h:ah,rot:0,valid:footprintFreeF(pf,agx,agy,aw,ah)||(pf===1&&amenityInsideContainer(PLACE.key,agx,agy,aw,ah))};
   }
+  if(PLACE.kind==="area"){
+    /* areas anchor like rooms: tapped tile is the centre-ish of the
+       shell you defined in the Build menu, clamped onto the grid */
+    var ew=PLACE.w||4, eh=PLACE.h||3;
+    var egx=Math.max(0,Math.min(GRID_W-ew,Math.floor(g.gx)-Math.floor((ew-1)/2)));
+    var egy=Math.max(0,Math.min(GRID_H-eh,Math.floor(g.gy)-Math.floor((eh-1)/2)));
+    return {gx:egx,gy:egy,w:ew,h:eh,rot:0,valid:footprintFreeF(pf,egx,egy,ew,eh)};
+  }
   if(PLACE.kind==="stairs"||PLACE.kind==="elevator"){
     /* the shaft must fit at this spot on EVERY floor at once */
     var sx=Math.max(0,Math.min(GRID_W-2,Math.floor(g.gx)));
@@ -2376,13 +2667,13 @@ function startPlacement(spec,gx,gy){
      the exceptions: they are placed on Floor 1 (a shaft then rises
      through every floor on its own). */
   var pf=(spec.kind==="lobby"||spec.kind==="dining"||spec.kind==="stairs"||spec.kind==="elevator")?1:G.curFloor;
-  PLACE={kind:spec.kind,key:spec.key||null,label:spec.label,cost:spec.cost,w:spec.w,h:spec.h,ghost:null,rot:defRot,floor:pf};
+  PLACE={kind:spec.kind,key:spec.key||null,label:spec.label,cost:spec.cost,w:spec.w,h:spec.h,ghost:null,rot:defRot,floor:pf,presetFunc:spec.presetFunc||null};
   closeDrawer();
   if(G.curFloor!==pf){G.curFloor=pf;}
   var bar=document.getElementById("placeBar"); if(bar)bar.style.display="block";
   var lab=document.getElementById("placeLabel"); if(lab)lab.innerHTML="<b>Placing: "+spec.label+"</b> — "+money(spec.cost)+(unlimitedCash()?" (unlimited cash)":"")+(pf>1?" · on Floor "+pf:"");
   var rl=document.getElementById("rotLabel"); if(rl)rl.textContent=ROT_NAMES[defRot];
-  var rb=document.getElementById("btnRotate"); if(rb)rb.style.display=(spec.kind==="hall"||spec.kind==="stairs"||spec.kind==="elevator"||spec.kind==="amenity"||spec.kind==="dining")?"none":"";
+  var rb=document.getElementById("btnRotate"); if(rb)rb.style.display=(spec.kind==="hall"||spec.kind==="stairs"||spec.kind==="elevator"||spec.kind==="amenity"||spec.kind==="dining"||spec.kind==="area")?"none":"";
   var hint=document.getElementById("placeHint"); if(hint)hint.textContent="Tap to preview · ⟳ rotate · hold 1s to place.";
   if(gx!=null&&gy!=null){
     if(spec.kind==="hall")PLACE.ghost={gx:gx,gy:gy,w:2,h:2,rot:0,valid:hallBlockStatus(pf,gx,gy).valid};
@@ -2419,6 +2710,7 @@ function moveFootprintFree(pl,gx,gy){
       if(pl.moveKind==="lobby"&&floor===1&&G.lobbyGx!=null){if(x>=G.lobbyGx&&x<G.lobbyGx+lobbyW()&&y>=G.lobbyGy&&y<G.lobbyGy+lobbyH())return true;}
       if(pl.moveKind==="dining"&&floor===1&&G.diningGx!=null){if(x>=G.diningGx&&x<G.diningGx+diningW()&&y>=G.diningGy&&y<G.diningGy+diningH())return true;}
       if(pl.moveKind==="amenity"){var sp=(G.amenitySpots||{})[pl.amenKey];if(sp&&sp.floor===floor&&x>=sp.gx&&x<sp.gx+sp.w&&y>=sp.gy&&y<sp.gy+sp.h)return true;}
+      if(pl.moveKind==="area"){var ar=areaById(pl.areaId);if(ar&&ar.floor===floor&&x>=ar.gx&&x<ar.gx+ar.w&&y>=ar.gy&&y<ar.gy+ar.h)return true;}
     }
     return cellFreeF(floor,x,y);
   }
@@ -2430,7 +2722,7 @@ function moveFootprintFree(pl,gx,gy){
   return true;
 }
 function startMove(spec){
-  PLACE={kind:"move",moveKind:spec.moveKind,key:null,roomId:spec.roomId||null,amenKey:spec.amenKey||null,
+  PLACE={kind:"move",moveKind:spec.moveKind,key:null,roomId:spec.roomId||null,amenKey:spec.amenKey||null,areaId:spec.areaId||null,
     label:spec.label,cost:0,w:spec.w,h:spec.h,rot:spec.rot||0,floor:spec.floor||1,fromGx:spec.fromGx,fromGy:spec.fromGy,
     ghost:null};
   closeDrawer();
@@ -2479,6 +2771,12 @@ function applyMove(){
     feed("Moved the <b>"+AMENITIES[PLACE.amenKey].name+"</b> to Floor "+sp.floor+" at "+gh.gx+","+gh.gy+".");
     toast(AMENITIES[PLACE.amenKey].name+" moved");
     G.selected={kind:"amenity",key:PLACE.amenKey};
+  }else if(PLACE.moveKind==="area"){
+    var ar2=areaById(PLACE.areaId); if(!ar2)return;
+    ar2.gx=gh.gx; ar2.gy=gh.gy; ar2.floor=PLACE.floor||ar2.floor;
+    feed("Moved the <b>"+areaTitle(ar2)+"</b> to Floor "+ar2.floor+" at "+gh.gx+","+gh.gy+"." +(ar2.func&&hasAnyLobby()&&!areaReachable(ar2)?" <b>Warning:</b> no path from the lobby reaches it here — it earns nothing until connected.":""));
+    toast(areaTitle(ar2)+" moved");
+    G.selected={kind:"area",id:ar2.id};
   }
   sfx("pop");
 }
@@ -2504,6 +2802,7 @@ function executePlacement(){
   else if(kind==="lobby"){ buyLobby(gh.gx,gh.gy,rot); }
   else if(kind==="dining"){ if(!placeDining(gh.gx,gh.gy)){toast("That dining area won't fit there.");return;} }
   else if(kind==="amenity"){ if(!placeAmenity(key,gh.gx,gh.gy,pf)){toast("That won't fit there.");return;} }
+  else if(kind==="area"){ if(!placeArea(gh.gx,gh.gy,pf)){toast("That area won't fit there.");return;} }
   else if(kind==="stairs"||kind==="elevator"){ if(!placeVertical(kind,gh.gx,gh.gy)){toast("That shaft won't fit there — it must be free on every floor.");return;} }
   stopHold();
   if(!keep){PLACE=null; var bar=document.getElementById("placeBar"); if(bar)bar.style.display="none";}
@@ -2518,7 +2817,7 @@ function placementPointerDown(e){
      is the fix for hallways chosen on one floor landing on another:
      the target floor is re-read from the current view right here,
      on every single tap. (Lobby & shafts stay Floor-1 by design.) */
-  if(PLACE.kind==="hall"||PLACE.kind==="room"||PLACE.kind==="amenity")PLACE.floor=G.curFloor;
+  if(PLACE.kind==="hall"||PLACE.kind==="room"||PLACE.kind==="amenity"||PLACE.kind==="area")PLACE.floor=G.curFloor;
   if(PLACE.kind==="move"&&(PLACE.moveKind==="room"||PLACE.moveKind==="amenity"))PLACE.floor=G.curFloor;
   var g=gridFromEvent(e);
   var gh=computeGhost(g);
@@ -2629,12 +2928,18 @@ function drawBedImg(t,bx,by,bw,bd,dirty){
    teal checker, Gold-Leaf Palace marble), and a lobby floor per
    lobby tier (honey inlay, cream checker, marble, glass-teal,
    plum). Plus a square teal bathroom tile grid with white grout,
-   and a wall panel per finish tier — Paint's cream over teal
-   wainscot with a wood rail, and one for each dressed finish.
+   and a wall panel per finish tier — Paint's is the generic
+   wall (cream upper with a framed landscape and brass sconce
+   over a wood rail and teal panelled wainscot, replacing the old
+   solid teal), and one for each dressed finish. Plus the plot's
+   grass — one meadow diamond with a wood border, painted as a
+   repeating tile, one diamond per grid cell — and
+   the teal-and-gold hallway carpet diamond.
    Until an image has loaded, every surface falls back to its
    procedural drawing. */
 var TILE_IMG={};
-[["bedroom","assets/tile-floor-bedroom.png"],["lobby","assets/tile-floor-lobby.png"],["bathroom","assets/tile-floor-bathroom.png"],["wall","assets/tile-wall-teal.png"],
+[["bedroom","assets/tile-floor-bedroom.png"],["lobby","assets/tile-floor-lobby.png"],["bathroom","assets/tile-floor-bathroom.png"],["wall","assets/tile-wall-generic.png"],
+ ["grass","assets/tile-grass.png"],["carpet","assets/tile-hallway-carpet.png"],
  ["fwallpaper","assets/tile-finish-floor-wallpaper.png"],["fwood","assets/tile-finish-floor-wood.png"],["fboutique","assets/tile-finish-floor-boutique.png"],["fpalace","assets/tile-finish-floor-palace.png"],
  ["wwallpaper","assets/tile-finish-wall-wallpaper.png"],["wwood","assets/tile-finish-wall-wood.png"],["wboutique","assets/tile-finish-wall-boutique.png"],["wpalace","assets/tile-finish-wall-palace.png"],
  ["lobby2","assets/tile-lobby-floor-creamchecker.png"],["lobby3","assets/tile-lobby-floor-marble.png"],["lobby4","assets/tile-lobby-floor-glassteal.png"],["lobby5","assets/tile-lobby-floor-plum.png"]].forEach(function(kv){
@@ -2886,19 +3191,29 @@ function drawGroundGrid(){
   /* the open-ground tap target goes FIRST: hit regions are tested
      last-pushed-first, so rooms and the lobby (pushed later) win */
   hitRegions.push({poly:[iso(0,0),iso(GRID_W,0),iso(GRID_W,GRID_H),iso(0,GRID_H)],fn:function(){handleGroundTap();}});
-  /* every grid tile: grass, hallway wood, lobby honey, or room floor */
+  /* every grid tile: grass, hallway carpet, lobby honey, or room floor */
   for(gy=0;gy<GRID_H;gy++)for(gx=0;gx<GRID_W;gx++){
-    if(roomAtCell(gx,gy)||amenityAtCellF(1,gx,gy))continue; /* room & amenity floors are drawn with the feature */
+    if(roomAtCell(gx,gy)||amenityAtCellF(1,gx,gy)||areaAtCellF(1,gx,gy))continue; /* room, amenity & area floors are drawn with the feature */
     if(isLobbyTile(gx,gy)){tile(gx,gy,((gx+gy)%2===0)?PAL.honey:PAL.terra);continue;}
     if(isDiningTile(gx,gy)){tile(gx,gy,((gx+gy)%2===0)?"#f2e6c0":PAL.terra);continue;}
     if(hasHall(1,gx,gy)){
-      var reach=(G.lobby===0)||seen[gx+","+gy];
-      tile(gx,gy,((gx+gy)%2===0)?"#a9713a":"#9a652f");
-      if(reach&&G.lobby>0){var rp=iso(gx+0.5,gy+0.5);R2(rp[0]-1,rp[1]-1,2,2,"rgba(233,180,76,.55)");}
+      var reach=(!hasAnyLobby())||seen[gx+","+gy];
+      /* the generated hallway carpet — deep teal with a cream
+         and gold centre pattern and a gold border — one diamond
+         per hallway tile, clipped to the tile; the wood floor
+         tiles are the fallback until it loads */
+      if(!drawFloorDiamond(tileImg("carpet"),gx,gy,1,1))tile(gx,gy,((gx+gy)%2===0)?"#a9713a":"#9a652f");
+      if(reach&&hasAnyLobby()){var rp=iso(gx+0.5,gy+0.5);R2(rp[0]-1,rp[1]-1,2,2,"rgba(233,180,76,.55)");}
       continue;
     }
-    tile(gx,gy,((gx+gy)%2===0)?"#3e8b3a":"#357a32");
-    if((gx*7+gy*13)%29===0){var fp=iso(gx+0.5,gy+0.5);R2(fp[0]-1,fp[1],2,2,"#ffd166");}
+    /* grass: the meadow diamond used as a tile — one diamond per
+       grid cell at its natural 1x1 size, never stretched across
+       the plot; the flat green checker + flower dot below are
+       the fallback until the image loads */
+    if(!drawFloorDiamond(tileImg("grass"),gx,gy,1,1)){
+      tile(gx,gy,((gx+gy)%2===0)?"#3e8b3a":"#357a32");
+      if((gx*7+gy*13)%29===0){var fp=iso(gx+0.5,gy+0.5);R2(fp[0]-1,fp[1],2,2,"#ffd166");}
+    }
   }
   /* hallway half-walls, the same ones the rooms get — drawn after
      every floor tile, before the lobby, shafts, rooms and amenities
@@ -2936,11 +3251,13 @@ function drawGroundGrid(){
   if(G.diningGx!=null)drawables.push({s:depthKey(G.diningGx,G.diningGy,diningW(),diningH()),dining:true});
   (G.verticals||[]).forEach(function(v){drawables.push({s:depthKey(v.gx,v.gy,2,2),v:v});});
   Object.keys(G.amenitySpots||{}).forEach(function(k){var sp=G.amenitySpots[k];if(sp.floor===1&&G.amenities[k]>0)drawables.push({s:depthKey(sp.gx,sp.gy,sp.w,sp.h),k:k,sp:sp});});
+  areasList().filter(function(a){return a.floor===1;}).forEach(function(a){drawables.push({s:depthKey(a.gx,a.gy,a.w,a.h),a:a});});
   G.rooms.filter(function(r){return r.floor===1;}).forEach(function(r){drawables.push({s:depthKey(r.gx,r.gy,roomW(r),roomH(r)),r:r});});
   drawables.sort(function(a,b){return a.s-b.s;});
   if(hallFade)cxg.globalAlpha=0.5;
   drawables.forEach(function(d){
-    if(d.r)drawRoomFree(d.r);
+    if(d.a)drawAreaSpot(d.a);
+    else if(d.r)drawRoomFree(d.r);
     else if(d.k)drawAmenitySpot(d.k,d.sp);
     else if(d.v)drawVerticalShaft(d.v,1);
     else if(d.lobby)drawLobbyOnGrid();
@@ -3539,14 +3856,14 @@ function drawRoomFree(r){
   /* reachability: red dashed outline + NO PATH when the lobby exists
      but no hallway path reaches this door */
   var reach=roomReachable(r);
-  if(!reach&&(G.lobby>0||r.floor>1)){
+  if(!reach&&(hasAnyLobby()||r.floor>1)){
     cxg.setLineDash([5,3]);
     P([iso(gx0-0.15,gy0-0.15),iso(gx0+W+0.15,gy0-0.15),iso(gx0+W+0.15,gy0+H+0.15),iso(gx0-0.15,gy0+H+0.15)],null,"#ff5a4a",2);
     cxg.setLineDash([]);
     var np=iso(gx0+W/2,gy0+H/2);
     R2(np[0]-26,np[1]-19,52,13,"rgba(90,20,12,.88)",PAL.gold);
     cxg.fillStyle="#ffb0a0";cxg.font="700 8px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("NO PATH",np[0],np[1]-9);
-  }else if(reach&&(G.lobby>0||r.floor>1)){
+  }else if(reach&&(hasAnyLobby()||r.floor>1)){
     var okp=iso(gx0+W/2,gy0-0.55);
     cxg.fillStyle="rgba(46,255,138,.9)";cxg.font="700 7px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("CONNECTED",okp[0],okp[1]);
   }
@@ -3574,7 +3891,7 @@ function isDiningTile(gx,gy){if(!G||G.diningGx==null)return false;return gx>=G.d
 function containerRectFree(gx,gy,w,h,ignore){
   for(var y=gy;y<gy+h;y++)for(var x=gx;x<gx+w;x++){
     if(!inGrid(x,y))return false;
-    if(roomAtCellF(1,x,y)||verticalAt(x,y))return false;
+    if(roomAtCellF(1,x,y)||verticalAt(x,y)||areaAtCellF(1,x,y))return false;
     var ak=amenityAtCellF(1,x,y); if(ak){ /* an interior item (a fountain placed inside THIS container) is contents, not an obstacle */ if(!((ignore==="lobby"&&isLobbyTile(x,y))||(ignore==="dining"&&isDiningTile(x,y))))return false; }
     if(ignore!=="lobby"&&isLobbyTile(x,y))return false;
     if(ignore!=="dining"&&isDiningTile(x,y))return false;
@@ -3887,8 +4204,116 @@ function drawAmenitySpot(key,spot){
   var lp=iso(cx,y0+H+0.2);
   cxg.fillStyle="rgba(255,246,214,.92)";cxg.font="700 7px Archivo,sans-serif";cxg.textAlign="center";
   cxg.fillText((AMENITIES[key].name+" · "+AMENITIES[key].tiers[t][0]).toUpperCase(),lp[0],lp[1]+8);
+  /* reachability, same rule as rooms and areas: NO PATH when a lobby
+     exists but no hallway path touches this amenity's spot */
+  if(hasAnyLobby()&&!amenitySpotReachable(key)){
+    cxg.setLineDash([5,3]);
+    P([iso(x0-0.15,y0-0.15),iso(x0+W+0.15,y0-0.15),iso(x0+W+0.15,y0+H+0.15),iso(x0-0.15,y0+H+0.15)],null,"#ff5a4a",2);
+    cxg.setLineDash([]);
+    var mnp=iso(cx,cy);
+    R2(mnp[0]-26,mnp[1]-19,52,13,"rgba(90,20,12,.88)",PAL.gold);
+    cxg.fillStyle="#ffb0a0";cxg.font="700 8px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("NO PATH",mnp[0],mnp[1]-9);
+  }
   hitRegions.push({poly:[iso(x0,y0,28),iso(x0+W,y0,28),iso(x0+W,y0+H),iso(x0,y0+H)],fn:(function(k){return function(){selectAmenity(k);};})(key)});
 }
+
+/* ---------- Areas, drawn where they stand ----------
+   A shell is a plain slab with half-walls and an UNDESIGNATED
+   label. Once designated, the floor takes its function's colours
+   and every interior piece built inside it is drawn in place:
+   the lobby desk, fountain, couches, tables and Wi-Fi router;
+   the pool with its slide, ladder, shower and bathroom stall;
+   and so on for the gym, bar, spa, dining room, meeting room,
+   expo hall, garden, parking and extras. */
+function drawAreaSpot(a){
+  var x0=a.gx,y0=a.gy,W=a.w,H=a.h,cx=x0+W/2,cy=y0+H/2,it=a.items||{};
+  var func=a.func||"shell";
+  var fc={shell:["#b9ac8c","#a89a78"],lobby:[PAL.honey,PAL.terra],pool:[PAL.stone,"#cfc4a4"],gym:["#2c3e46","#26333b"],bar:[PAL.cream2,PAL.terra],spa:[PAL.wood,"#7a5126"],dining:["#f2e6c0",PAL.terra],meeting:["#5b2a4e","#532646"],expo:["#cfc8b8","#c2bba8"],garden:[PAL.gM,"#357a32"],parking:["#565656","#4c4c4c"],extras:["#1d5a56","#185049"]}[func]||["#b9ac8c","#a89a78"];
+  for(var ty=0;ty<H;ty++)for(var tx=0;tx<W;tx++)tile(x0+tx,y0+ty,((tx+ty)%2===0)?fc[0]:fc[1]);
+  /* back walls first — the inside paints over them */
+  wallX(x0,y0,W,13,PAL.tealM); wallY(x0,y0,H,13,PAL.tealM);
+  if(func==="shell"){
+    cxg.setLineDash([5,4]);
+    P([iso(x0+0.3,y0+0.3),iso(x0+W-0.3,y0+0.3),iso(x0+W-0.3,y0+H-0.3),iso(x0+0.3,y0+H-0.3)],null,PAL.goldD,1);
+    cxg.setLineDash([]);
+  }else if(func==="lobby"){
+    if(it.desk){var dw=Math.min(W-0.6,2.3);box(x0+0.3,y0+0.3,dw,0.8,11,PAL.woodL,PAL.wood,"#6e4520");var bp=iso(x0+0.3+dw/2,y0+0.7,11);EL(bp[0],bp[1],2.4,2.4,PAL.gold,OUT);}
+    if(it.fountain){var fim=fountainImg(1);if(fim){var fw2=Math.min(W,H)*TW*0.8,fh2=fw2*fim.naturalHeight/fim.naturalWidth;var fcp=iso(cx,cy+0.3);cxg.drawImage(fim,Math.round(fcp[0]-fw2/2),Math.round(fcp[1]+6-fh2),Math.round(fw2),Math.round(fh2));}else{ellip(cx,cy+0.3,Math.min(W,H)*0.30,PAL.stone,PAL.stoneD,2);ellip(cx,cy+0.3,Math.min(W,H)*0.22,PAL.water2,null,3);}}
+    if(it.couches){box(x0+0.25,y0+H-1.0,Math.min(1.7,Math.max(0.7,W-2.0)),0.32,14,"#2a7f7f","#2a7f7f","#256f6a");box(x0+0.25,y0+H-0.68,Math.min(1.7,Math.max(0.7,W-2.0)),0.55,8,"#35948f","#2a7f7f","#1d6f6a");}
+    if(it.tables){ellip(x0+W-0.85,y0+H-0.7,0.30,"#cfe8e4",OUT,5);ellip(cx+0.9,cy+0.5,0.26,"#cfe8e4",OUT,5);}
+    if(it.wifi){var wp2=iso(x0+W-0.45,y0+0.2,20);R2(wp2[0]-3,wp2[1]-3,7,6,"#12262b",OUT);EL(wp2[0],wp2[1],1.6,1.6,PAL.gold);LN(wp2[0]-5,wp2[1]-6,wp2[0]+5,wp2[1]-6,PAL.gold,1);}
+  }else if(func==="pool"){
+    if(it.pool){
+      P([iso(x0+0.35,y0+0.35),iso(x0+W-0.35,y0+0.35),iso(x0+W-0.35,y0+H-0.35),iso(x0+0.35,y0+H-0.35)],PAL.water);
+      P([iso(x0+0.72,y0+0.72),iso(x0+W-0.72,y0+0.72),iso(x0+W-0.72,y0+H-0.72),iso(x0+0.72,y0+H-0.72)],PAL.water2);
+      var sp1=iso(x0+W*0.3,y0+H*0.4);sparkle(sp1[0],sp1[1],3);var sp2=iso(x0+W*0.7,y0+H*0.6);sparkle(sp2[0],sp2[1],3);
+    }
+    if(it.slide){for(var si2=0;si2<3;si2++)box(x0+0.25+si2*0.5,y0+0.18,0.46,0.8,4+si2*5,"#7fd4e8","#57b7bd","#3d8fa8");var slp=iso(x0+1.9,y0+0.6,16);LN(slp[0],slp[1],slp[0]+13,slp[1]+9,"#57b7bd",3);}
+    if(it.ladder){var lp3=iso(x0+W-0.55,y0+H-0.4);LN(lp3[0]-4,lp3[1]-10,lp3[0]-4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]+4,lp3[1]-10,lp3[0]+4,lp3[1]+2,PAL.stoneD,2);LN(lp3[0]-4,lp3[1]-6,lp3[0]+4,lp3[1]-6,PAL.stoneD,1);LN(lp3[0]-4,lp3[1]-2,lp3[0]+4,lp3[1]-2,PAL.stoneD,1);}
+    if(it.shower){box(x0+W-0.85,y0+0.25,0.6,0.6,16,"#cfe8e4","#9fc8cc","#7fb3b8");var shp2=iso(x0+W-0.55,y0+0.55,22);EL(shp2[0],shp2[1],4,2,"#cfd8d4",OUT);LN(shp2[0],shp2[1]+2,shp2[0],shp2[1]+7,"#bfeff2",1);}
+    if(it.bathroom){box(x0+W-0.95,y0+H-0.95,0.75,0.75,18,"#fdfaf0","#e8e2d2","#d8d0be");var wcp=iso(x0+W-0.57,y0+H-0.57,4);EL(wcp[0],wcp[1],3,2,"#ffffff",OUT);}
+  }else if(func==="gym"){
+    if(it.treadmills){var nT=Math.min(3,Math.max(1,Math.floor(W-1)));for(var ti2=0;ti2<nT;ti2++){box(x0+0.3+ti2*1.05,y0+0.25,0.8,0.55,8,"#3a3a3a","#2b2b2b","#1f1f1f");var tp3=iso(x0+0.68+ti2*1.05,y0+0.5,10);EL(tp3[0],tp3[1],2.4,1.6,PAL.gold);}}
+    if(it.weights){box(x0+0.3,y0+H-0.85,W-0.6,0.5,9,PAL.wood,PAL.wood,PAL.woodD);for(var di2=0;di2<5;di2++){var dp2=iso(x0+0.6+di2*Math.max(0.4,(W-1.2)/5),y0+H-0.6,11);EL(dp2[0],dp2[1],1.7,1.7,di2%2?"#232323":PAL.goldD);}}
+    if(it.mats){ellip(x0+W-0.8,y0+H-0.8,0.34,"#e07a5f",OUT,3);ellip(cx,y0+H-0.8,0.34,"#7fb069",OUT,3);}
+  }else if(func==="bar"){
+    if(it.counter){box(x0+0.25,y0+0.2,Math.min(W-0.5,4.2),0.55,12,PAL.woodL,PAL.wood,PAL.woodD);for(var bi3=0;bi3<Math.min(6,W);bi3++){var bt3=iso(x0+0.6+bi3*0.8,y0+0.45,15);R2(bt3[0]-1,bt3[1]-4,3,5,["#7fb069","#c9902e","#b4552d"][bi3%3],OUT);}}
+    if(it.stools){for(var st3=0;st3<Math.min(4,Math.floor(W));st3++)box(x0+0.45+st3*0.95,y0+0.95,0.34,0.34,6,PAL.gold,PAL.gold,PAL.goldD);}
+    if(it.tables){ellip(x0+1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=4)ellip(x0+W-1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=5&&H>=4)ellip(cx,cy+0.6,0.32,"#fdfaf0",OUT,6);}
+    if(it.kitchen){box(x0+W-0.8,y0+0.25,0.6,1.2,14,"#e8e2d2","#cfc4a4","#b8ae96");}
+  }else if(func==="spa"){
+    if(it.sauna)box(x0+0.25,y0+0.25,1.3,1.1,20,PAL.woodL,PAL.wood,PAL.woodD);
+    if(it.tub){ellip(x0+W-0.85,y0+0.85,0.55,"#fdfaf0",OUT,5);ellip(x0+W-0.85,y0+0.85,0.40,PAL.water2,null,6);}
+    if(it.massage){box(cx-0.7,y0+H-1.1,1.4,0.6,7,"#fdfaf0","#e8e2d2","#d8d0be");plant(x0+0.4,y0+H-0.4,0.85);}
+  }else if(func==="dining"){
+    if(it.buffet){var bw2=Math.min(W-0.6,2.6);box(x0+0.3,y0+0.28,bw2,0.62,10,"#e9dfc2",PAL.woodL,PAL.wood);for(var bi4=0;bi4<3;bi4++){var bp4=iso(x0+0.6+bi4*0.5,y0+0.58,11);EL(bp4[0],bp4[1],3.4,2,"#e8e2d2",OUT);EL(bp4[0],bp4[1]-2,1.1,1.1,PAL.gold);}}
+    if(it.tables){ellip(x0+1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(W>=4)ellip(x0+W-1.0,y0+H-0.8,0.32,"#fdfaf0",OUT,6);if(H>=4)ellip(cx,cy+0.4,0.32,"#fdfaf0",OUT,6);}
+    if(it.kitchen)box(x0+W-0.8,y0+0.25,0.6,1.2,14,"#e8e2d2","#cfc4a4","#b8ae96");
+  }else if(func==="meeting"){
+    if(it.table){var tw3=Math.min(W-1.2,3.2),td3=Math.min(H-1.0,1.1);box(cx-tw3/2,cy-td3/2,tw3,td3,8,PAL.woodL,PAL.wood,PAL.woodD);}
+    if(it.screen)P([iso(x0+0.5,y0,30),iso(x0+W-0.5,y0,30),iso(x0+W-0.5,y0,17),iso(x0+0.5,y0,17)],"#e8f4f4",PAL.goldD);
+    if(it.coffee)box(x0+W-0.75,y0+H-0.8,0.5,0.5,9,"#3a3a3a","#2b2b2b","#1f1f1f");
+  }else if(func==="expo"){
+    if(it.booths){var cols2=Math.max(2,Math.floor(W/2)),rows2=Math.max(1,Math.floor(H/2));for(var j2=0;j2<rows2;j2++)for(var i3=0;i3<cols2;i3++){var bx3=x0+0.5+i3*2.0,by3=y0+0.9+j2*1.9;if(bx3+1.3>x0+W-0.2||by3+1.0>y0+H-0.2)continue;box(bx3,by3,1.3,0.95,12,((i3+j2)%2)?PAL.tealM:PAL.gold,((i3+j2)%2)?"#1d6f6a":"#d9a83e",((i3+j2)%2)?"#14524e":PAL.goldD);}}
+    if(it.stage)box(x0+0.3,y0+0.2,Math.min(W-0.6,2.6),0.7,10,"#7a3b4e","#5f2c3d","#4a2230");
+    if(it.banner){var bn2=iso(cx,y0,20);R2(bn2[0]-16,bn2[1]-6,32,9,PAL.gold,PAL.goldD);cxg.fillStyle="#2a1a05";cxg.font="700 6px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("EXPO",bn2[0],bn2[1]+1);}
+  }else if(func==="garden"){
+    if(it.plants){plant(x0+0.45,y0+0.5,0.9);plant(x0+W-0.45,y0+H-0.4,0.9);if(W>=4)plant(x0+W-0.45,y0+0.5,0.8);if(H>=4)plant(x0+0.45,y0+H-0.4,0.8);}
+    if(it.paths){tile(Math.floor(cx-0.5),Math.floor(cy-0.5),PAL.stone);tile(Math.floor(cx+0.5),Math.floor(cy-0.5),PAL.stone);tile(Math.floor(cx-0.5),Math.floor(cy+0.5),PAL.stone);}
+    if(it.gazebo){[[-0.8,-0.8],[0.8,-0.8],[0.8,0.8],[-0.8,0.8]].forEach(function(o){box(cx+o[0]-0.09,cy+o[1]-0.09,0.18,0.18,20,PAL.woodL,PAL.wood,PAL.woodD);});var gz2=[iso(cx-0.8,cy-0.8),iso(cx+0.8,cy-0.8),iso(cx+0.8,cy+0.8),iso(cx-0.8,cy+0.8)];P(gz2.map(function(pp){return [pp[0],pp[1]-24];}),PAL.terra,OUT);}
+  }else if(func==="parking"){
+    if(it.bays){for(var pb2=0;pb2<W-1;pb2++){var b1=iso(x0+0.4+pb2,y0+0.25),b2=iso(x0+0.4+pb2,y0+1.05);LN(b1[0],b1[1],b2[0],b2[1],"rgba(255,255,255,.65)",1);}var carC=["#c65a3a","#3d6b8a","#e9e4d8"];for(var ci2=0;ci2<Math.min(3,W-1);ci2++){box(x0+0.25+ci2*1.1,y0+0.3,0.95,0.85,7,carC[ci2%3],carC[ci2%3],"rgba(0,0,0,.3)");}}
+    if(it.canopy){var roof2=[iso(x0+0.15,y0+0.15,30),iso(x0+W-0.15,y0+0.15,30),iso(x0+W-0.15,y0+H-0.15,30),iso(x0+0.15,y0+H-0.15,30)];PA(roof2,"#2a7f7f",0.55);P(roof2,null,PAL.tealD,1);}
+    if(it.valet)box(x0+W-1.05,y0+H-0.95,0.8,0.7,13,PAL.woodL,PAL.wood,PAL.woodD);
+  }else if(func==="extras"){
+    if(it.games){for(var sh2=0;sh2<Math.min(3,Math.floor(W-1));sh2++)box(x0+0.25+sh2*1.05,y0+0.15,0.9,0.4,24,PAL.woodL,PAL.wood,PAL.woodD);}
+    if(it.cinema)P([iso(x0+W-2.0,y0,30),iso(x0+W-0.3,y0,30),iso(x0+W-0.3,y0,17),iso(x0+W-2.0,y0,17)],"#3d8fa8",OUT);
+    if(it.kids){box(x0+0.35,y0+H-1.0,0.5,0.5,6,"#e07a5f","#c65a3a","#a8482c");box(x0+0.95,y0+H-1.0,0.5,0.5,6,"#7fb069","#5f9450","#47703c");}
+  }
+  /* front walls last, over the inside, with a door gap on the south */
+  wallY(x0+W,y0,H,13,PAL.tealM);
+  var stub=Math.max(0.4,W/2-0.5);
+  wallX(x0,y0+H,stub,13,PAL.tealM); wallX(x0+W/2+0.5,y0+H,stub,13,PAL.tealM);
+  wallX(x0,y0+H,stub,3,PAL.woodL,13); wallX(x0+W/2+0.5,y0+H,stub,3,PAL.woodL,13);
+  var lp=iso(cx,y0+H+0.2);
+  cxg.fillStyle="rgba(255,246,214,.92)";cxg.font="700 7px Archivo,sans-serif";cxg.textAlign="center";
+  var rk=a.func?areaReqKey(a.func):null;
+  var label=(a.func?AREA_FUNCS[a.func].name:"UNDESIGNATED AREA")+" · "+W+"×"+H+((a.func&&rk&&!areaFunctional(a))?" · NEEDS "+areaItemDef(a.func,rk).name.toUpperCase():"");
+  cxg.fillText(label.toUpperCase(),lp[0],lp[1]+8);
+  /* reachability, same as rooms: red dashed outline + NO PATH when a
+     lobby exists but no hallway path touches this area — it earns
+     nothing until it is connected */
+  if(a.func&&hasAnyLobby()&&!areaReachable(a)){
+    cxg.setLineDash([5,3]);
+    P([iso(x0-0.15,y0-0.15),iso(x0+W+0.15,y0-0.15),iso(x0+W+0.15,y0+H+0.15),iso(x0-0.15,y0+H+0.15)],null,"#ff5a4a",2);
+    cxg.setLineDash([]);
+    var anp=iso(cx,cy);
+    R2(anp[0]-26,anp[1]-19,52,13,"rgba(90,20,12,.88)",PAL.gold);
+    cxg.fillStyle="#ffb0a0";cxg.font="700 8px Archivo,sans-serif";cxg.textAlign="center";cxg.fillText("NO PATH",anp[0],anp[1]-9);
+  }
+  hitRegions.push({poly:[iso(x0,y0,28),iso(x0+W,y0,28),iso(x0+W,y0+H),iso(x0,y0+H)],fn:(function(id){return function(){selectArea(id);};})(a.id)});
+}
+
 /* ---------- Stairwell / elevator shaft (drawn on every floor) ----------
    One shaft, placed on Floor 1, drawn at the same grid spot on every
    floor it passes through — which is all of them, up to the highest. */
@@ -3932,7 +4357,7 @@ function drawStoreyBelow(f){
   PA(gc.map(function(p){return [p[0],p[1]+7];}),"#000000",0.35);
   P(gc,f===1?"#22452a":"#123a3c",OUT);
   for(gy=0;gy<GRID_H;gy++)for(gx=0;gx<GRID_W;gx++){
-    if(roomAtCellF(f,gx,gy)||verticalAt(gx,gy)||amenityAtCellF(f,gx,gy))continue;
+    if(roomAtCellF(f,gx,gy)||verticalAt(gx,gy)||amenityAtCellF(f,gx,gy)||areaAtCellF(f,gx,gy))continue;
     if(f===1&&isLobbyTile(gx,gy)){tile(gx,gy,((gx+gy)%2===0)?"#a87c46":"#966e3c");continue;}
     if(f===1&&isDiningTile(gx,gy)){tile(gx,gy,((gx+gy)%2===0)?"#c9b083":"#b89a6c");continue;}
     if(hasHall(f,gx,gy)){tile(gx,gy,((gx+gy)%2===0)?"#8a5c2c":"#7a5126");continue;}
@@ -3946,6 +4371,7 @@ function drawStoreyBelow(f){
   var drawablesB=[];
   if(f===1&&G.lobby>0&&G.lobbyGx!=null)drawablesB.push({s:depthKey(G.lobbyGx,G.lobbyGy,lobbyW(),lobbyH()),lobby:true});
   G.rooms.filter(function(r){return r.floor===f;}).forEach(function(r){drawablesB.push({s:depthKey(r.gx,r.gy,roomW(r),roomH(r)),r:r});});
+  areasList().filter(function(a){return a.floor===f;}).forEach(function(a){drawablesB.push({s:depthKey(a.gx,a.gy,a.w,a.h),a:a});});
   Object.keys(G.amenitySpots||{}).forEach(function(k){var spB=G.amenitySpots[k];if(spB&&spB.floor===f&&G.amenities[k]>0)drawablesB.push({s:depthKey(spB.gx,spB.gy,spB.w,spB.h),k:k,sp:spB});});
   (G.verticals||[]).forEach(function(v){drawablesB.push({s:depthKey(v.gx,v.gy,2,2),v:v});});
   drawablesB.sort(function(a,b){return a.s-b.s;});
@@ -3965,6 +4391,9 @@ function drawStoreyBelow(f){
     P([iso(r.gx+rw-1.4,r.gy+rh,36),iso(r.gx+rw-0.7,r.gy+rh,36),iso(r.gx+rw-0.7,r.gy+rh,0),iso(r.gx+rw-1.4,r.gy+rh,0)],PAL.wood,OUT);
     if(r.state==="dirty"){var dp=iso(r.gx+rw/2,r.gy+rh,10);R2(dp[0]-8,dp[1],16,4,"#e9b44c");}
     if(r.state==="broken"){var bp=iso(r.gx+rw/2,r.gy+rh,10);R2(bp[0]-8,bp[1],16,4,"#e07a5f");}
+   }else if(d.a){var aa=d.a;
+    var atop={pool:PAL.water,garden:PAL.gM,parking:"#565656",gym:"#2c3e46",spa:"#8b5a2b",meeting:"#5b2a4e",expo:"#cfc8b8",bar:PAL.terra,extras:PAL.tealM,lobby:PAL.honey,dining:PAL.cream2}[aa.func]||"#b9ac8c";
+    box(aa.gx,aa.gy,aa.w,aa.h,Math.round(WALLH*0.6),atop,PAL.tealM,"#14524e");
    }else if(d.k){var sp=d.sp;
     /* amenities on the floor below read as solid blocks with a
        telling top colour — water for a pool, green for gardens,
@@ -4009,10 +4438,12 @@ function drawUpperFloor(){
   P(gc,null,PAL.gold,1);
   var seenF=reachableSetFloor(F);
   for(gy=0;gy<GRID_H;gy++)for(gx=0;gx<GRID_W;gx++){
-    if(roomAtCellF(F,gx,gy)||amenityAtCellF(F,gx,gy))continue; /* room & amenity floors are drawn with the feature */
+    if(roomAtCellF(F,gx,gy)||amenityAtCellF(F,gx,gy)||areaAtCellF(F,gx,gy))continue; /* room, amenity & area floors are drawn with the feature */
     if(verticalAt(gx,gy))continue; /* the shaft is drawn below */
     if(hasHall(F,gx,gy)){
-      tile(gx,gy,((gx+gy)%2===0)?"#a9713a":"#9a652f");
+      /* the same generated hallway carpet as Floor 1 — one
+         diamond per tile, wood tiles until it loads */
+      if(!drawFloorDiamond(tileImg("carpet"),gx,gy,1,1))tile(gx,gy,((gx+gy)%2===0)?"#a9713a":"#9a652f");
       if(seenF[gx+","+gy]&&(G.verticals||[]).length){var rp=iso(gx+0.5,gy+0.5);R2(rp[0]-1,rp[1]-1,2,2,"rgba(233,180,76,.55)");}
       continue;
     }
@@ -4031,10 +4462,11 @@ function drawUpperFloor(){
   var drawablesF=[];
   (G.verticals||[]).forEach(function(v){drawablesF.push({s:depthKey(v.gx,v.gy,2,2),v:v});});
   Object.keys(G.amenitySpots||{}).forEach(function(k){var sp=G.amenitySpots[k];if(sp.floor===F&&G.amenities[k]>0)drawablesF.push({s:depthKey(sp.gx,sp.gy,sp.w,sp.h),k:k,sp:sp});});
+  areasList().filter(function(a){return a.floor===F;}).forEach(function(a){drawablesF.push({s:depthKey(a.gx,a.gy,a.w,a.h),a:a});});
   rs.forEach(function(r){drawablesF.push({s:depthKey(r.gx,r.gy,roomW(r),roomH(r)),r:r});});
   drawablesF.sort(function(a,b){return a.s-b.s;});
   if(hallFadeF)cxg.globalAlpha=0.5;
-  drawablesF.forEach(function(d){if(d.r)drawRoomFree(d.r);else if(d.k)drawAmenitySpot(d.k,d.sp);else drawVerticalShaft(d.v,F);});
+  drawablesF.forEach(function(d){if(d.a)drawAreaSpot(d.a);else if(d.r)drawRoomFree(d.r);else if(d.k)drawAmenitySpot(d.k,d.sp);else drawVerticalShaft(d.v,F);});
   if(hallFadeF)cxg.globalAlpha=1;
   /* floor label + guidance, drawn on the transparent grid itself */
   var lp=iso(GRID_W/2,GRID_H+0.75);
@@ -4285,7 +4717,7 @@ function buildStaff(){
   if(G.view==="floor"&&G.curFloor===1){
     /* staff stand on the real grid: housekeepers patrol the hallway
        tiles that exist, everyone else posts at the lobby or a door */
-    var anchor=(G.lobby>0&&G.lobbyGx!=null)?lobbyCenter():(G.rooms[0]?[doorFront(G.rooms[0])[0]+0.5,doorFront(G.rooms[0])[1]+0.5]:[8,8]);
+    var anchor=hasAnyLobby()?lobbyCenter():(G.rooms[0]?[doorFront(G.rooms[0])[0]+0.5,doorFront(G.rooms[0])[1]+0.5]:[8,8]);
     var i2;
     /* housekeepers are NOT posts here any more — their figures are
        bound to the cleaner agents after the defs below */
@@ -4386,6 +4818,7 @@ function buildOccupants(){
     if(stillWalking)return;
     var el=document.createElement("div");
     el.className="walker occupant";
+    if(r.guest.arch.key==="backpacker")el.style.setProperty("--pw",Math.round(PW*0.8)+"px"); /* 80% size inside the room too — same person, same scale */
     var ckOcc=CHAR_GUEST[r.guest.arch.key]||null;
     el.innerHTML=charFigHTML(ckOcc,DIR_SE,0,false)||('<span class="fig">'+personSVG(hex(r.guest.arch.color),{suitcase:true,archKey:r.guest.arch.key,seed:guestSeed(r.guest)})+'</span>');
     peopleLayer.appendChild(el);
@@ -4406,14 +4839,15 @@ function buildOccupants(){
    stair foot is beyond this view, so they walk the lobby's path out
    and vanish at the stairs marker (east edge). */
 function pathPts(list){return list.map(function(p){return projPct(p[0],p[1]);});}
-function lobbyCenter(){return [G.lobbyGx+lobbyW()/2,G.lobbyGy+lobbyH()/2];}
+function lobbyCenter(){var r=primaryLobbyRect();if(r)return [r.gx+r.w/2,r.gy+r.h/2];return [GRID_W/2,GRID_H/2];}
 function lobbyDoorFront(){
-  if(G.lobbyGx==null)return [GRID_W/2,GRID_H-0.4];
-  var c=lobbyCenter(),rot=G.lobbyRot||2;
-  if(rot===0)return [c[0],G.lobbyGy-0.4];
-  if(rot===1)return [G.lobbyGx+lobbyW()+0.4,c[1]];
-  if(rot===2)return [c[0],G.lobbyGy+lobbyH()+0.4];
-  return [G.lobbyGx-0.4,c[1]];
+  var r=primaryLobbyRect();
+  if(!r)return [GRID_W/2,GRID_H-0.4];
+  var c=lobbyCenter(),rot=r.rot||2;
+  if(rot===0)return [c[0],r.gy-0.4];
+  if(rot===1)return [r.gx+r.w+0.4,c[1]];
+  if(rot===2)return [c[0],r.gy+r.h+0.4];
+  return [r.gx-0.4,c[1]];
 }
 function streetPt(){return [GRID_W/2,GRID_H+0.6];}
 /* guest walker: entrance -> lobby (or door) -> decision -> hallway path -> room */
@@ -4423,12 +4857,13 @@ function spawnPerson(g){
     resolveGuest(g);rebuildScene();updateHUD();return;
   }
   var el=document.createElement("div");el.className="walker";
+  if(g.arch.key==="backpacker")el.style.setProperty("--pw",Math.round(PW*0.8)+"px"); /* the backpacker is drawn at 80% of the standard guest size */
   var ckGuest=CHAR_GUEST[g.arch.key]||null;
   el.innerHTML=charFigHTML(ckGuest,DIR_SE,0,false)||('<span class="fig">'+personSVG(hex(g.arch.color),{suitcase:true,archKey:g.arch.key,seed:guestSeed(g)})+'</span>');
   peopleLayer.appendChild(el);
-  var w={el:el,guest:g,state:"walk",wait:0,decided:false,ok:false,room:null,bubble:null,ph:Math.random()*6,charKey:ckGuest,dir:DIR_SE};
+  var w={el:el,guest:g,state:"walk",wait:0,decided:false,ok:false,room:null,bubble:null,ph:Math.random()*6,charKey:ckGuest,dir:DIR_SE,scale:(g.arch.key==="backpacker"?0.8:1)};
   var st2=projPct(streetPt()[0],streetPt()[1]);w.x=st2[0];w.y=st2[1];
-  if(G.lobby>0&&G.lobbyGx!=null){
+  if(hasAnyLobby()){
     var df=lobbyDoorFront(),lc=lobbyCenter();
     w.wp=pathPts([[streetPt()[0],df[1]],df,lc]); /* street -> lobby door -> desk */
     w.atPt=lc;
@@ -4456,14 +4891,14 @@ function tickPeople(dt){
   for(var i=walkers.length-1;i>=0;i--){
     var w=walkers[i];
     w.ph+=dt*4.5; /* walk-cycle cadence halved with travel speed, so the bob/frames stay in step with the feet */
-    w.el.style.marginTop=(-PW*1.34+Math.abs(Math.sin(w.ph))*-PW*0.05)+"px";
+    w.el.style.marginTop=(-PW*(w.scale||1)*1.34+Math.abs(Math.sin(w.ph))*-PW*(w.scale||1)*0.05)+"px";
     if(w.state==="wait"){
       if(w.charKey)setCharFig(w.el,w.charKey,w.dir,0,false); /* standing panel while deciding */
       w.wait-=dt;
       if(w.wait<=0){
         clearBubble(w);
         if(w.decided&&w.ok){
-          if(w.room&&w.room.floor===1&&G.lobby>0){
+          if(w.room&&w.room.floor===1&&hasAnyLobby()){
             var path=gridPathToRoom(w.room); /* the real hallway route, tile by tile */
             if(path){
               var full=path.concat([roomStandPt(w.room)]); /* door front -> the exact spot the occupant sprite will stand */
@@ -4477,7 +4912,7 @@ function tickPeople(dt){
           else{
             /* upstairs room: walk the REAL hallway path from the lobby
                to the stair/elevator shaft, then ride it up */
-            var vPath=(G.lobby>0)?gridPathToVertical():null;
+            var vPath=hasAnyLobby()?gridPathToVertical():null;
             if(vPath){w.wp=pathPts(vPath);}
             else if((G.verticals||[]).length){var v0=G.verticals[0];w.wp=pathPts([[v0.gx+1,GRID_H-0.4],[v0.gx+1,v0.gy+1]]);} /* no lobby: across the grass to the shaft foot */
             else{w.wp=pathPts([lobbyDoorFront(),streetPt()]);}
@@ -4485,7 +4920,7 @@ function tickPeople(dt){
           w.wi=0;w.state="toStairs";
         }
         else if(w.decided){
-          if(G.lobby>0&&G.lobbyGx!=null){var dfL=lobbyDoorFront();w.wp=pathPts([dfL,[streetPt()[0],dfL[1]],streetPt()]);}
+          if(hasAnyLobby()){var dfL=lobbyDoorFront();w.wp=pathPts([dfL,[streetPt()[0],dfL[1]],streetPt()]);}
           else if(w.atPt){w.wp=pathPts([[w.atPt[0],GRID_H-0.4],streetPt()]);}
           else{w.wp=pathPts([streetPt()]);}
           w.wi=0;w.state="leave";
@@ -4584,6 +5019,7 @@ function scheduleCenterOn(gx,gy){
 function selectRoom(id){G.selectedRoomId=id;G.selected={kind:"room",id:id};closeDrawer();refreshSelInfo();renderStage();var r=byId(id);if(r)scheduleCenterOn(r.gx+roomW(r)/2,r.gy+roomH(r)/2);}
 function selectLobby(){G.selectedRoomId=null;G.selected={kind:"lobby"};closeDrawer();refreshSelInfo();renderStage();if(G.lobbyGx!=null)scheduleCenterOn(G.lobbyGx+lobbyW()/2,G.lobbyGy+lobbyH()/2);}
 function selectDining(){G.selectedRoomId=null;G.selected={kind:"dining"};closeDrawer();refreshSelInfo();renderStage();if(G.diningGx!=null)scheduleCenterOn(G.diningGx+diningW()/2,G.diningGy+diningH()/2);}
+function selectArea(id){G.selectedRoomId=null;G.selected={kind:"area",id:id};closeDrawer();refreshSelInfo();renderStage();var a=areaById(id);if(a)scheduleCenterOn(a.gx+a.w/2,a.gy+a.h/2);}
 function selectAmenity(key){G.selectedRoomId=null;G.selected={kind:"amenity",key:key};closeDrawer();refreshSelInfo();renderStage();var sp=(G.amenitySpots||{})[key];if(sp)scheduleCenterOn(sp.gx+sp.w/2,sp.gy+sp.h/2);}
 function selectVertical(gx,gy){G.selectedRoomId=null;G.selected={kind:"vertical",gx:gx,gy:gy};closeDrawer();refreshSelInfo();renderStage();scheduleCenterOn(gx+1,gy+1);}
 function selectHall(gx,gy,floor){G.selectedRoomId=null;G.selected={kind:"hall",gx:gx,gy:gy,floor:floor};closeDrawer();refreshSelInfo();renderStage();scheduleCenterOn(gx+0.5,gy+0.5);}
@@ -4662,6 +5098,9 @@ function startMoveSelected(){
   }else if(sel.kind==="amenity"){
     var spot=(G.amenitySpots||{})[sel.key]; if(!spot)return;
     startMove({moveKind:"amenity",amenKey:sel.key,label:AMENITIES[sel.key].name,w:spot.w,h:spot.h,rot:0,floor:spot.floor,fromGx:spot.gx,fromGy:spot.gy});
+  }else if(sel.kind==="area"){
+    var a2=areaById(sel.id); if(!a2)return;
+    startMove({moveKind:"area",areaId:a2.id,label:areaTitle(a2),w:a2.w,h:a2.h,rot:0,floor:a2.floor,fromGx:a2.gx,fromGy:a2.gy});
   }else{toast("Hallway tiles can't be moved — remove this tile and lay a new one from Build.");}
 }
 /* ---------- Live menu refresh ----------
@@ -4702,9 +5141,10 @@ function selSignature(){
   }
   if(sel.kind==="amenity"){
     var spot=(G.amenitySpots||{})[sel.key];
-    return ["amenity",sel.key,G.amenities[sel.key]||0,spot?(spot.floor+","+spot.gx+","+spot.gy+","+spot.w+"x"+spot.h):"gone",
+    return ["amenity",sel.key,G.amenities[sel.key]||0,spot?(spot.floor+","+spot.gx+","+spot.gy+","+spot.w+"x"+spot.h):"gone",amenitySpotReachable(sel.key)?1:0,
       (modifyArm.key==="amenity:"+sel.key&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
   }
+  if(sel.kind==="area"){var a=areaById(sel.id);if(!a)return "area:gone:"+sel.id;return ["area",a.id,a.func||"",JSON.stringify(a.items||{}),a.w,a.h,a.gx,a.gy,a.floor,areaReachable(a)?1:0,(modifyArm.key==="area:"+a.id&&Date.now()-modifyArm.at<=8000)?1:0].join("|");}
   if(sel.kind==="hall")return ["hall",sel.floor,sel.gx,sel.gy,hasHall(sel.floor,sel.gx,sel.gy)?1:0,
     (modifyArm.key==="hall:"+sel.floor+","+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000)?1:0].join("|");
   return sel.kind;
@@ -4719,10 +5159,11 @@ function panelSignature(){
   }
   if(tab==="build"){
     var counts={}; G.rooms.forEach(function(r){counts[r.type]=(counts[r.type]||0)+1;});
-    return ["build",Object.keys(G.hallTiles||{}).length,connectedCount(),G.lobby,lobbyW(),lobbyH(),
+    return ["build",Object.keys(G.hallTiles||{}).length,connectedCount(),unreachableAreaCount(),G.lobby,lobbyW(),lobbyH(),
       G.diningGx==null?0:1,G.breakfast,G.floors,(G.verticals||[]).map(function(v){return v.kind;}).join("+"),
       Object.keys(AMENITIES).map(function(k){var sp=(G.amenitySpots||{})[k];return G.amenities[k]+(sp?"@"+sp.floor:"");}).join(","),
-      Object.keys(ROOM_TYPES).map(function(k){return counts[k]||0;}).join(",")].join("|");
+      Object.keys(ROOM_TYPES).map(function(k){return counts[k]||0;}).join(","),
+      (G.areas||[]).map(function(a){return a.id+":"+a.func+":"+a.w+"x"+a.h+":"+JSON.stringify(a.items||{});}).join(","),AREA_BUILD_W+"x"+AREA_BUILD_H].join("|");
   }
   if(tab==="staff"){
     return ["staff",Object.keys(STAFF_ROLES).map(function(k){return G.staff[k];}).join(","),
@@ -4858,6 +5299,7 @@ function refreshSelInfo(){
     armedHere=(modifyArm.key==="amenity:"+key&&Date.now()-modifyArm.at<=8000);
     var sz=n?amenitySize(key,cur+1):null;
     h="<b>"+a.name+" · "+a.tiers[cur][0]+"</b> — Floor "+spot.floor+" · "+spot.w+"×"+spot.h+" tiles · Appeal +"+a.tiers[cur][3]+
+      (hasAnyLobby()&&!amenitySpotReachable(key)?"<br><span class=\"pill warn\">NO PATH</span> No hallway path from the lobby reaches this amenity — it earns <b>no Appeal</b> and satisfies <b>no guest wants</b> until a path touches it.":"")+
       '<div class="modBtns">'+
       (n?btn("selUpAmen","Upgrade in place: "+n[0]+((sz&&(sz[0]!==spot.w||sz[1]!==spot.h))?" (grows to "+sz[0]+"×"+sz[1]+")":"")+" — "+money(n[1]),"primary"):'<span class="pill">Top tier</span>')+
       btn("selMove","↔ Move")+btn("selRemove",armedHere?"Confirm remove — $0 back":"Remove — $0 back","danger")+btn("selClose","Close")+"</div>";
@@ -4865,6 +5307,39 @@ function refreshSelInfo(){
     bind.push(["selMove",function(){startMoveSelected();}]);
     bind.push(["selRemove",function(){removeSelected();}]);
     var ua=document.getElementById("selUpAmen"); if(ua)ua.addEventListener("click",function(){buyAmenity(key);refreshSelInfo();});
+  }else if(sel.kind==="area"){
+    var a=areaById(sel.id);
+    if(!a){boxEl.style.display="none";G.selected=null;return;}
+    armedHere=(modifyArm.key==="area:"+a.id&&Date.now()-modifyArm.at<=8000);
+    var ait=a.items||{};
+    var rk=a.func?areaReqKey(a.func):null;
+    h="<b>"+areaTitle(a)+"</b> — Floor "+a.floor+" · "+a.w+"×"+a.h+" tiles · shell "+money(a.w*a.h*AREA_TILE_COST)+
+      "<br>"+(a.func?(areaFunctional(a)?'<span class="pill good">FUNCTIONAL</span> · Appeal +'+areaAppeal(a)+(areaUpkeep(a)?' · upkeep '+money(areaUpkeep(a))+'/mo':''):'<span class="pill warn">Not functional yet</span> — it needs its <b>'+(rk?areaItemDef(a.func,rk).name:"")+'</b> built inside'):"<b>Undesignated</b> — choose what this area is for:")+
+      (a.func==="lobby"?("<br>Hotel Wi-Fi: "+(ait.wifi?'<b>ON</b> — $40/mo, guests who want Wi-Fi are satisfied':'<b>off</b> — add Wi-Fi below to switch on hotel Wi-Fi')):"")+
+      (hasAnyLobby()&&!areaReachable(a)?"<br><span class=\"pill warn\">NO PATH</span> No hallway path from the lobby reaches this area — nobody can get to it, so it earns <b>no Appeal</b>, satisfies <b>no guest wants</b> and brings in <b>no fees</b> until you connect it. Lay hallways that touch it.":"");
+    if(!a.func){
+      h+='<div class="modBtns">';
+      Object.keys(AREA_FUNCS).forEach(function(fk){h+='<button data-adesig="'+fk+'">'+AREA_FUNCS[fk].name+'</button>';});
+      h+='</div><div class="sub">Designating is free, and the chosen function is fitted out from this menu. Guest rooms are not an area function — they are built from the Build menu\'s Rooms list at the fixed size of their tier.</div>';
+    }else{
+      var defs=AREA_ITEMS[a.func]||[];
+      if(defs.length){
+        h+='<div class="modBtns">';
+        defs.forEach(function(d){
+          if(ait[d.key])h+='<span class="pill good">'+d.name+' ✓</span>';
+          else h+='<button data-aitem="'+d.key+'">'+d.name+' — '+money(d.cost)+(d.upkeep?" · "+money(d.upkeep)+"/mo":"")+(d.req?" (required)":"")+'</button>';
+        });
+        h+='</div>';
+      }
+    }
+    h+='<div class="modBtns"><span class="pill">Expand — $300/tile</span><button id="selExpN">↑ North '+money(a.w*AREA_TILE_COST)+'</button><button id="selExpE">→ East '+money(a.h*AREA_TILE_COST)+'</button><button id="selExpS">↓ South '+money(a.w*AREA_TILE_COST)+'</button><button id="selExpW">← West '+money(a.h*AREA_TILE_COST)+'</button></div>';
+    h+='<div class="modBtns">'+btn("selMove","↔ Move")+btn("selRemoveA",armedHere?"Confirm remove — $0 back":"Remove — $0 back","danger")+btn("selClose","Close")+"</div>";
+    boxEl.innerHTML=h;boxEl.style.display="block";
+    bind.push(["selMove",function(){startMoveSelected();}]);
+    var rma=document.getElementById("selRemoveA"); if(rma)rma.addEventListener("click",function(){removeArea(a);});
+    [["selExpN","N"],["selExpE","E"],["selExpS","S"],["selExpW","W"]].forEach(function(eb){var eel=document.getElementById(eb[0]);if(eel)eel.addEventListener("click",function(){expandArea(a,eb[1]);});});
+    Array.prototype.forEach.call(boxEl.querySelectorAll("[data-adesig]"),function(x){x.addEventListener("click",function(){designateArea(a,x.getAttribute("data-adesig"));});});
+    Array.prototype.forEach.call(boxEl.querySelectorAll("[data-aitem]"),function(x){x.addEventListener("click",function(){buyAreaItem(a,x.getAttribute("data-aitem"));});});
   }else if(sel.kind==="hall"){
     armedHere=(modifyArm.key==="hall:"+sel.floor+","+sel.gx+","+sel.gy&&Date.now()-modifyArm.at<=8000);
     h="<b>Hallway tile</b> — Floor "+sel.floor+" · "+sel.gx+","+sel.gy+
